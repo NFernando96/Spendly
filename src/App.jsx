@@ -45,7 +45,7 @@ function AuthGate() {
 export default function App() {
   return (
     <AuthProvider>
-      <BrowserRouter basename="/dashboard">        
+      <BrowserRouter basename="/Spendly">        
       <AuthGate />
       </BrowserRouter>
     </AuthProvider>
