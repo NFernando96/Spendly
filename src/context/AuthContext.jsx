@@ -1,6 +1,5 @@
 import { createContext, useContext, useEffect, useState } from 'react'
 import {
-  signInWithEmailAndPassword,
   signOut,
   onAuthStateChanged,
   GoogleAuthProvider,
@@ -8,23 +7,23 @@ import {
 } from 'firebase/auth'
 import { auth } from '../services/firebase'
 
-// ── Allowlist: only these emails can access the app ───────────────────────────
+// ── Your email only ───────────────────────────────────────────────────────────
 const ALLOWED_EMAILS = [
-  'kbrnfernando@gmail.com', // ← replace with your actual email
+  'YOUR_EMAIL@gmail.com', // ← replace with your exact Google account email
 ]
 
-const isAllowed = (email) => ALLOWED_EMAILS.map(e => e.toLowerCase()).includes(email?.toLowerCase())
+const isAllowed = (email) =>
+  ALLOWED_EMAILS.map(e => e.toLowerCase()).includes(email?.toLowerCase())
 
 const AuthCtx = createContext(null)
 
 export const AuthProvider = ({ children }) => {
-  const [user, setUser]           = useState(null)
+  const [user, setUser]               = useState(null)
   const [authLoading, setAuthLoading] = useState(true)
 
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, async (u) => {
       if (u && !isAllowed(u.email)) {
-        // Signed in but not allowed — sign them out immediately
         await signOut(auth)
         setUser(null)
       } else {
@@ -34,11 +33,6 @@ export const AuthProvider = ({ children }) => {
     })
     return unsub
   }, [])
-
-  const signIn = (email, password) => {
-    if (!isAllowed(email)) return Promise.reject({ code: 'auth/not-allowed' })
-    return signInWithEmailAndPassword(auth, email, password)
-  }
 
   const signInWithGoogle = async () => {
     const result = await signInWithPopup(auth, new GoogleAuthProvider())
@@ -52,7 +46,7 @@ export const AuthProvider = ({ children }) => {
   const logOut = () => signOut(auth)
 
   return (
-    <AuthCtx.Provider value={{ user, authLoading, signIn, signInWithGoogle, logOut }}>
+    <AuthCtx.Provider value={{ user, authLoading, signInWithGoogle, logOut }}>
       {children}
     </AuthCtx.Provider>
   )
