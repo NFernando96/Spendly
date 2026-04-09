@@ -9,7 +9,7 @@ import { auth } from '../services/firebase'
 
 // ── Your email only ───────────────────────────────────────────────────────────
 const ALLOWED_EMAILS = [
-  'YOUR_EMAIL@gmail.com', // ← replace with your exact Google account email
+  'kbrnfernando@gmail.com', // ← replace with your exact Google account email
 ]
 
 const isAllowed = (email) =>
