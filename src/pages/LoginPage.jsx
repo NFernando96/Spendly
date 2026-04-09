@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { TrendingUp, Mail, Lock, User, Eye, EyeOff, AlertCircle } from 'lucide-react'
+import { TrendingUp, Mail, Lock, Eye, EyeOff, AlertCircle } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
 
 const GOOGLE_ICON = (
@@ -12,10 +12,8 @@ const GOOGLE_ICON = (
 )
 
 export default function LoginPage() {
-  const { signIn, signUp, signInWithGoogle } = useAuth()
+  const { signIn, signInWithGoogle } = useAuth()
 
-  const [mode, setMode]         = useState('login') // 'login' | 'signup'
-  const [name, setName]         = useState('')
   const [email, setEmail]       = useState('')
   const [password, setPassword] = useState('')
   const [showPass, setShowPass] = useState(false)
@@ -28,11 +26,10 @@ export default function LoginPage() {
       case 'auth/user-not-found':
       case 'auth/wrong-password':
       case 'auth/invalid-credential': return 'Incorrect email or password.'
-      case 'auth/email-already-in-use': return 'An account with this email already exists.'
-      case 'auth/weak-password': return 'Password must be at least 6 characters.'
-      case 'auth/invalid-email': return 'Please enter a valid email address.'
+      case 'auth/invalid-email':      return 'Please enter a valid email address.'
       case 'auth/popup-closed-by-user': return 'Google sign-in was cancelled.'
-      case 'auth/too-many-requests': return 'Too many attempts. Please try again later.'
+      case 'auth/too-many-requests':  return 'Too many attempts. Please try again later.'
+      case 'auth/not-allowed':        return 'Access denied.'
       default: return 'Something went wrong. Please try again.'
     }
   }
@@ -40,14 +37,9 @@ export default function LoginPage() {
   const handleSubmit = async () => {
     setError('')
     if (!email.trim() || !password.trim()) { setError('Please fill in all fields.'); return }
-    if (mode === 'signup' && !name.trim()) { setError('Please enter your name.'); return }
     setLoading(true)
-    try {
-      if (mode === 'login') await signIn(email.trim(), password)
-      else                  await signUp(email.trim(), password, name.trim())
-    } catch (e) {
-      setError(friendlyError(e.code))
-    }
+    try { await signIn(email.trim(), password) }
+    catch (e) { setError(friendlyError(e.code)) }
     setLoading(false)
   }
 
@@ -57,12 +49,6 @@ export default function LoginPage() {
     try { await signInWithGoogle() }
     catch (e) { setError(friendlyError(e.code)) }
     setGoogleLoading(false)
-  }
-
-  const switchMode = () => {
-    setMode(m => m === 'login' ? 'signup' : 'login')
-    setError('')
-    setName(''); setEmail(''); setPassword('')
   }
 
   return (
@@ -101,7 +87,7 @@ export default function LoginPage() {
           boxShadow: 'var(--shadow-md)',
         }}>
           <h2 style={{ fontSize: 18, fontWeight: 700, color: 'var(--text)', marginBottom: 20 }}>
-            {mode === 'login' ? 'Welcome back' : 'Create your account'}
+            Welcome back
           </h2>
 
           {/* Google button */}
@@ -130,20 +116,6 @@ export default function LoginPage() {
             <div style={{ flex: 1, height: 1, background: 'var(--border)' }} />
           </div>
 
-          {/* Name field (signup only) */}
-          {mode === 'signup' && (
-            <Field label="Full name" style={{ marginBottom: 12 }}>
-              <InputRow icon={<User size={15} color="var(--text3)" />}>
-                <input
-                  type="text" placeholder="John Doe" value={name}
-                  onChange={e => setName(e.target.value)}
-                  onKeyDown={e => e.key === 'Enter' && handleSubmit()}
-                  style={inputStyle}
-                />
-              </InputRow>
-            </Field>
-          )}
-
           {/* Email */}
           <Field label="Email" style={{ marginBottom: 12 }}>
             <InputRow icon={<Mail size={15} color="var(--text3)" />}>
@@ -165,7 +137,7 @@ export default function LoginPage() {
             }>
               <input
                 type={showPass ? 'text' : 'password'}
-                placeholder={mode === 'signup' ? 'Min. 6 characters' : '••••••••'}
+                placeholder="••••••••"
                 value={password}
                 onChange={e => setPassword(e.target.value)}
                 onKeyDown={e => e.key === 'Enter' && handleSubmit()}
@@ -202,22 +174,11 @@ export default function LoginPage() {
             onMouseLeave={e => { e.currentTarget.style.boxShadow = '0 4px 16px rgba(124,58,237,0.35)' }}
           >
             {loading
-              ? <><span style={{ width: 16, height: 16, border: '2px solid rgba(255,255,255,0.4)', borderTopColor: '#fff', borderRadius: '50%', display: 'inline-block', animation: 'spin 0.7s linear infinite' }} /> {mode === 'login' ? 'Signing in…' : 'Creating account…'}</>
-              : mode === 'login' ? 'Sign in' : 'Create account'
+              ? <><span style={{ width: 16, height: 16, border: '2px solid rgba(255,255,255,0.4)', borderTopColor: '#fff', borderRadius: '50%', display: 'inline-block', animation: 'spin 0.7s linear infinite' }} /> Signing in…</>
+              : 'Sign in'
             }
           </button>
         </div>
-
-        {/* Switch mode */}
-        <p style={{ textAlign: 'center', marginTop: 20, fontSize: 14, color: 'var(--text2)' }}>
-          {mode === 'login' ? "Don't have an account? " : 'Already have an account? '}
-          <button onClick={switchMode} style={{
-            background: 'none', border: 'none', cursor: 'pointer',
-            color: 'var(--accent)', fontWeight: 600, fontSize: 14, padding: 0,
-          }}>
-            {mode === 'login' ? 'Sign up' : 'Sign in'}
-          </button>
-        </p>
       </div>
     </div>
   )
