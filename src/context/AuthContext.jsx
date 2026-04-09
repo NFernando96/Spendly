@@ -8,15 +8,19 @@ import {
 import { auth } from '../services/firebase'
 
 // ── Your email only ───────────────────────────────────────────────────────────
-const ALLOWED_EMAILS = [import.meta.env.VITE_ALLOWED_EMAIL]
+const ALLOWED_EMAILS = [
+  import.meta.env.VITE_ALLOWED_EMAIL?.toLowerCase()
+].filter(Boolean)
 
-const isAllowed = (email) =>
-  ALLOWED_EMAILS.map(e => e.toLowerCase()).includes(email?.toLowerCase())
+const isAllowed = (email) => {
+  if (!email) return false
+  return ALLOWED_EMAILS.includes(email.toLowerCase())
+}
 
 const AuthCtx = createContext(null)
 
 export const AuthProvider = ({ children }) => {
-  const [user, setUser]               = useState(null)
+  const [user, setUser] = useState(null)
   const [authLoading, setAuthLoading] = useState(true)
 
   useEffect(() => {
@@ -34,10 +38,12 @@ export const AuthProvider = ({ children }) => {
 
   const signInWithGoogle = async () => {
     const result = await signInWithPopup(auth, new GoogleAuthProvider())
+
     if (!isAllowed(result.user.email)) {
       await signOut(auth)
-      throw { code: 'auth/not-allowed' }
+      throw new Error('auth/not-allowed')
     }
+
     return result
   }
 
