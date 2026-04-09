@@ -10,7 +10,7 @@ import { auth } from '../services/firebase'
 
 // ── Allowlist: only these emails can access the app ───────────────────────────
 const ALLOWED_EMAILS = [
-  'YOUR_EMAIL@gmail.com', // ← replace with your actual email
+  'kbrnfernando@gmail.com', // ← replace with your actual email
 ]
 
 const isAllowed = (email) => ALLOWED_EMAILS.map(e => e.toLowerCase()).includes(email?.toLowerCase())
