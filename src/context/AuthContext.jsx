@@ -8,9 +8,7 @@ import {
 import { auth } from '../services/firebase'
 
 // ── Your email only ───────────────────────────────────────────────────────────
-const ALLOWED_EMAILS = [
-  'kbrnfernando@gmail.com', // ← replace with your exact Google account email
-]
+const ALLOWED_EMAILS = [import.meta.env.VITE_ALLOWED_EMAIL]
 
 const isAllowed = (email) =>
   ALLOWED_EMAILS.map(e => e.toLowerCase()).includes(email?.toLowerCase())
