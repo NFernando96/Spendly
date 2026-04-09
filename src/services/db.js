@@ -1,12 +1,18 @@
-// ── Local Storage DB ──────────────────────────────────────────────────────────
+// ── Firestore DB ───────────────────────────────────────────────────────────────
+// All data is scoped per user: users/{uid}/{collection}
+// Mirrors the original localStorage API exactly — no other files need changes.
 
-const read  = (key, fallback) => { try { const v = localStorage.getItem(key); return v ? JSON.parse(v) : fallback } catch { return fallback } }
-const write = (key, val)      => { try { localStorage.setItem(key, JSON.stringify(val)) } catch {} }
-const uid   = ()              => Math.random().toString(36).slice(2) + Date.now().toString(36)
+import {
+  collection, doc, setDoc, updateDoc, deleteDoc, addDoc,
+  onSnapshot, query, orderBy, getDoc, getDocs, writeBatch,
+} from 'firebase/firestore'
+import { db, auth } from './firebase'
 
-const listeners = {}
-const emit  = (channel) => (listeners[channel] || []).forEach(fn => fn())
-const on    = (channel, fn) => { listeners[channel] = [...(listeners[channel]||[]), fn]; return () => { listeners[channel] = (listeners[channel]||[]).filter(f=>f!==fn) } }
+const uid = () => Math.random().toString(36).slice(2) + Date.now().toString(36)
+
+// Helpers: paths scoped to the logged-in user
+const userCol = (col)     => collection(db, 'users', auth.currentUser.uid, col)
+const userDoc = (col, id) => doc(db, 'users', auth.currentUser.uid, col, id)
 
 // ── Built-in categories (read-only seeds) ─────────────────────────────────────
 export const BUILTIN_EXPENSE_CATEGORIES = [
@@ -35,57 +41,49 @@ export const BUILTIN_INCOME_CATEGORIES = [
   { name: 'Other Income', icon: '💰', color: '#6b7280' },
 ]
 
-// ── Dynamic categories (merged with builtins) ─────────────────────────────────
-export const subscribeExpenseCategories = (cb) => {
-  const notify = () => {
-    const custom = read('customExpenseCategories', [])
-    cb([...BUILTIN_EXPENSE_CATEGORIES, ...custom])
-  }
-  notify()
-  return on('customExpenseCategories', notify)
-}
-
-export const subscribeIncomeCategories = (cb) => {
-  const notify = () => {
-    const custom = read('customIncomeCategories', [])
-    cb([...BUILTIN_INCOME_CATEGORIES, ...custom])
-  }
-  notify()
-  return on('customIncomeCategories', notify)
-}
-
-export const addCustomCategory = (type, data) => {
-  const key = type === 'income' ? 'customIncomeCategories' : 'customExpenseCategories'
-  const list = read(key, [])
-  list.push({ ...data, id: uid(), custom: true })
-  write(key, list)
-  emit(key)
-  // Also re-emit the merged channel
-  emit(type === 'income' ? 'customIncomeCategories' : 'customExpenseCategories')
-}
-
-export const deleteCustomCategory = (type, name) => {
-  const key = type === 'income' ? 'customIncomeCategories' : 'customExpenseCategories'
-  write(key, read(key, []).filter(c => c.name !== name))
-  emit(key)
-}
-
-// Convenience: sync getters used inside modals that need current merged lists
-export const getExpenseCategories = () => [...BUILTIN_EXPENSE_CATEGORIES, ...read('customExpenseCategories', [])]
-export const getIncomeCategories  = () => [...BUILTIN_INCOME_CATEGORIES,  ...read('customIncomeCategories',  [])]
-
 // Legacy exports so existing import sites don't break
 export const EXPENSE_CATEGORIES = BUILTIN_EXPENSE_CATEGORIES
 export const INCOME_CATEGORIES  = BUILTIN_INCOME_CATEGORIES
 export const DEFAULT_CATEGORIES = BUILTIN_EXPENSE_CATEGORIES
 
+// ── Dynamic categories ────────────────────────────────────────────────────────
+export const subscribeExpenseCategories = (cb) => {
+  const q = query(userCol('customExpenseCategories'), orderBy('createdAt'))
+  return onSnapshot(q, snap => {
+    const custom = snap.docs.map(d => ({ id: d.id, ...d.data() }))
+    cb([...BUILTIN_EXPENSE_CATEGORIES, ...custom])
+  })
+}
+
+export const subscribeIncomeCategories = (cb) => {
+  const q = query(userCol('customIncomeCategories'), orderBy('createdAt'))
+  return onSnapshot(q, snap => {
+    const custom = snap.docs.map(d => ({ id: d.id, ...d.data() }))
+    cb([...BUILTIN_INCOME_CATEGORIES, ...custom])
+  })
+}
+
+export const addCustomCategory = async (type, data) => {
+  const col = type === 'income' ? 'customIncomeCategories' : 'customExpenseCategories'
+  await addDoc(userCol(col), { ...data, custom: true, createdAt: Date.now() })
+}
+
+export const deleteCustomCategory = async (type, name) => {
+  const col = type === 'income' ? 'customIncomeCategories' : 'customExpenseCategories'
+  const snap = await getDocs(userCol(col))
+  const match = snap.docs.find(d => d.data().name === name)
+  if (match) await deleteDoc(match.ref)
+}
+
+// Sync getters (used in modals before async data loads — returns builtins only)
+export const getExpenseCategories = () => BUILTIN_EXPENSE_CATEGORIES
+export const getIncomeCategories  = () => BUILTIN_INCOME_CATEGORIES
+
 export const getCatMeta = (name, type) => {
-  const expList = getExpenseCategories()
-  const incList = getIncomeCategories()
-  const list = type === 'income' ? incList : expList
+  const list = type === 'income' ? BUILTIN_INCOME_CATEGORIES : BUILTIN_EXPENSE_CATEGORIES
   return list.find(c => c.name === name)
-    || expList.find(c => c.name === name)
-    || incList.find(c => c.name === name)
+    || BUILTIN_EXPENSE_CATEGORIES.find(c => c.name === name)
+    || BUILTIN_INCOME_CATEGORIES.find(c => c.name === name)
     || { name, icon: '💸', color: '#6b7280' }
 }
 
@@ -96,89 +94,128 @@ const SEED_ACCOUNTS = [
   { id: 'acc_credit', name: 'NDB Credit',  type: 'credit', balance: 0, createdAt: Date.now() + 2 },
 ]
 
-export const subscribeAccounts = (cb) => {
-  const notify = () => {
-    let data = read('accounts', null)
-    if (!data) { data = SEED_ACCOUNTS; write('accounts', data) }
-    cb([...data].sort((a,b) => a.createdAt - b.createdAt))
+// Seed default accounts for brand-new users
+const seedAccountsIfNeeded = async () => {
+  const snap = await getDocs(userCol('accounts'))
+  if (snap.empty) {
+    const batch = writeBatch(db)
+    SEED_ACCOUNTS.forEach(a => batch.set(userDoc('accounts', a.id), a))
+    await batch.commit()
   }
-  notify()
-  return on('accounts', notify)
 }
 
-export const addAccount    = (data) => { const a = read('accounts', SEED_ACCOUNTS); a.push({ ...data, id: uid(), createdAt: Date.now() }); write('accounts', a); emit('accounts') }
-export const updateAccount = (id, data) => { write('accounts', read('accounts', []).map(a => a.id === id ? { ...a, ...data } : a)); emit('accounts') }
-export const deleteAccount = (id) => { write('accounts', read('accounts', []).filter(a => a.id !== id)); emit('accounts') }
+export const subscribeAccounts = (cb) => {
+  seedAccountsIfNeeded()
+  const q = query(userCol('accounts'), orderBy('createdAt'))
+  return onSnapshot(q, snap => {
+    cb(snap.docs.map(d => ({ id: d.id, ...d.data() })))
+  })
+}
+
+export const addAccount    = async (data) => {
+  const id = uid()
+  await setDoc(userDoc('accounts', id), { ...data, id, createdAt: Date.now() })
+}
+export const updateAccount = async (id, data) => {
+  await updateDoc(userDoc('accounts', id), data)
+}
+export const deleteAccount = async (id) => {
+  await deleteDoc(userDoc('accounts', id))
+}
 
 // ── Transactions ──────────────────────────────────────────────────────────────
 export const subscribeTransactions = (cb) => {
-  const notify = () => { const data = read('transactions', []); cb([...data].sort((a,b) => b.date.localeCompare(a.date) || b.createdAt - a.createdAt)) }
-  notify()
-  return on('transactions', notify)
+  const q = query(userCol('transactions'), orderBy('date', 'desc'), orderBy('createdAt', 'desc'))
+  return onSnapshot(q, snap => {
+    cb(snap.docs.map(d => ({ id: d.id, ...d.data() })))
+  })
 }
 
-export const addTransaction = (data) => {
-  const transactions = read('transactions', [])
-  const tx = { ...data, id: uid(), createdAt: Date.now() }
-  transactions.push(tx)
-  write('transactions', transactions)
-  _applyBalance(data, 1)
+export const addTransaction = async (data) => {
+  const id = uid()
+  const tx = { ...data, id, createdAt: Date.now() }
+  await setDoc(userDoc('transactions', id), tx)
+  await _applyBalance(data, 1)
+
+  // Track quick expenses for autocomplete
   if (data.type === 'expense') {
     const key = data.description.trim().toLowerCase().replace(/\s+/g, '_') + '_' + data.amount
-    const quickList = read('quickExpenses', [])
-    const idx = quickList.findIndex(q => q.id === key)
-    if (idx >= 0) {
-      quickList[idx] = { ...quickList[idx], usageCount: quickList[idx].usageCount + 1, amount: data.amount, category: data.category, accountId: data.accountId }
+    const ref  = userDoc('quickExpenses', key)
+    const snap = await getDoc(ref)
+    if (snap.exists()) {
+      await updateDoc(ref, {
+        usageCount: snap.data().usageCount + 1,
+        amount:     data.amount,
+        category:   data.category,
+        accountId:  data.accountId,
+      })
     } else {
-      quickList.push({ id: key, description: data.description.trim(), amount: data.amount, category: data.category, accountId: data.accountId, usageCount: 1 })
+      await setDoc(ref, {
+        id:          key,
+        description: data.description.trim(),
+        amount:      data.amount,
+        category:    data.category,
+        accountId:   data.accountId,
+        usageCount:  1,
+      })
     }
-    write('quickExpenses', quickList)
-    emit('quickExpenses')
   }
-  emit('transactions')
 }
 
-export const deleteTransaction = (tx) => { write('transactions', read('transactions', []).filter(t => t.id !== tx.id)); _applyBalance(tx, -1); emit('transactions') }
+export const deleteTransaction = async (tx) => {
+  await deleteDoc(userDoc('transactions', tx.id))
+  await _applyBalance(tx, -1)
+}
 
-export const updateTransaction = (oldTx, newData) => {
-  _applyBalance(oldTx, -1)
+export const updateTransaction = async (oldTx, newData) => {
+  await _applyBalance(oldTx, -1)
   const updated = { ...oldTx, ...newData }
-  write('transactions', read('transactions', []).map(t => t.id === oldTx.id ? updated : t))
-  _applyBalance(updated, 1)
-  emit('transactions')
+  await setDoc(userDoc('transactions', oldTx.id), updated)
+  await _applyBalance(updated, 1)
 }
 
-const _applyBalance = (tx, dir) => {
+const _applyBalance = async (tx, dir) => {
   const amt = parseFloat(tx.amount) * dir
-  if (tx.type === 'expense')       { _shiftBal(tx.accountId, -amt) }
-  else if (tx.type === 'income')   { _shiftBal(tx.accountId, +amt) }
-  else if (tx.type === 'transfer') { _shiftBal(tx.accountId, -amt); _shiftBal(tx.toAccountId, +amt) }
-  emit('accounts')
+  if      (tx.type === 'expense')  { await _shiftBal(tx.accountId, -amt) }
+  else if (tx.type === 'income')   { await _shiftBal(tx.accountId, +amt) }
+  else if (tx.type === 'transfer') { await _shiftBal(tx.accountId, -amt); await _shiftBal(tx.toAccountId, +amt) }
 }
 
-const _shiftBal = (id, delta) => {
-  const accounts = read('accounts', []).map(a =>
-    a.id === id ? { ...a, balance: Math.round(((a.balance || 0) + delta) * 100) / 100 } : a
-  )
-  write('accounts', accounts)
+const _shiftBal = async (id, delta) => {
+  const ref  = userDoc('accounts', id)
+  const snap = await getDoc(ref)
+  if (snap.exists()) {
+    const current = snap.data().balance || 0
+    await updateDoc(ref, { balance: Math.round((current + delta) * 100) / 100 })
+  }
 }
 
-// ── Quick / Recurring ─────────────────────────────────────────────────────────
+// ── Quick Expenses ────────────────────────────────────────────────────────────
 export const subscribeQuickExpenses = (cb) => {
-  const notify = () => { const data = read('quickExpenses', []); cb([...data].sort((a,b) => b.usageCount - a.usageCount)) }
-  notify()
-  return on('quickExpenses', notify)
+  return onSnapshot(userCol('quickExpenses'), snap => {
+    const data = snap.docs.map(d => ({ id: d.id, ...d.data() }))
+    cb(data.sort((a, b) => b.usageCount - a.usageCount))
+  })
 }
 
+// ── Recurring ─────────────────────────────────────────────────────────────────
 export const subscribeRecurring = (cb) => {
-  const notify = () => cb(read('recurring', []).sort((a,b) => a.createdAt - b.createdAt))
-  notify()
-  return on('recurring', notify)
+  const q = query(userCol('recurring'), orderBy('createdAt'))
+  return onSnapshot(q, snap => {
+    cb(snap.docs.map(d => ({ id: d.id, ...d.data() })))
+  })
 }
 
-export const addRecurring    = (data) => { const list = read('recurring', []); list.push({ ...data, id: uid(), createdAt: Date.now() }); write('recurring', list); emit('recurring') }
-export const updateRecurring = (id, data) => { write('recurring', read('recurring', []).map(r => r.id === id ? { ...r, ...data } : r)); emit('recurring') }
-export const deleteRecurring = (id)   => { write('recurring', read('recurring', []).filter(r => r.id !== id)); emit('recurring') }
+export const addRecurring    = async (data) => {
+  const id = uid()
+  await setDoc(userDoc('recurring', id), { ...data, id, createdAt: Date.now() })
+}
+export const updateRecurring = async (id, data) => {
+  await updateDoc(userDoc('recurring', id), data)
+}
+export const deleteRecurring = async (id) => {
+  await deleteDoc(userDoc('recurring', id))
+}
 
 // ── Bills ─────────────────────────────────────────────────────────────────────
 export const BUILTIN_BILL_PRESETS = [
@@ -196,48 +233,47 @@ export const BUILTIN_BILL_PRESETS = [
   { name: 'Other',       icon: '📋', color: '#6b7280' },
 ]
 
-export const getBillPresets = () => [...BUILTIN_BILL_PRESETS, ...read('customBillPresets', [])]
-export const BILL_PRESETS = BUILTIN_BILL_PRESETS // legacy alias
-
-export const getBillPreset = (name) =>
-  getBillPresets().find(p => p.name === name) || { name, icon: '📋', color: '#6b7280' }
+export const BILL_PRESETS   = BUILTIN_BILL_PRESETS
+export const getBillPresets = () => BUILTIN_BILL_PRESETS
+export const getBillPreset  = (name) =>
+  BUILTIN_BILL_PRESETS.find(p => p.name === name) || { name, icon: '📋', color: '#6b7280' }
 
 export const subscribeBillPresets = (cb) => {
-  const notify = () => cb(getBillPresets())
-  notify()
-  return on('customBillPresets', notify)
+  const q = query(userCol('customBillPresets'), orderBy('createdAt'))
+  return onSnapshot(q, snap => {
+    const custom = snap.docs.map(d => ({ id: d.id, ...d.data() }))
+    cb([...BUILTIN_BILL_PRESETS, ...custom])
+  })
 }
 
-export const addCustomBillPreset = (data) => {
-  const list = read('customBillPresets', [])
-  list.push({ ...data, id: uid(), custom: true })
-  write('customBillPresets', list)
-  emit('customBillPresets')
+export const addCustomBillPreset = async (data) => {
+  await addDoc(userCol('customBillPresets'), { ...data, custom: true, createdAt: Date.now() })
 }
-
-export const deleteCustomBillPreset = (name) => {
-  write('customBillPresets', read('customBillPresets', []).filter(p => p.name !== name))
-  emit('customBillPresets')
+export const deleteCustomBillPreset = async (name) => {
+  const snap = await getDocs(userCol('customBillPresets'))
+  const match = snap.docs.find(d => d.data().name === name)
+  if (match) await deleteDoc(match.ref)
 }
 
 export const subscribeBills = (cb) => {
-  const notify = () => cb([...read('bills', [])].sort((a,b) => (a.dueDay||1) - (b.dueDay||1)))
-  notify()
-  return on('bills', notify)
+  return onSnapshot(userCol('bills'), snap => {
+    const data = snap.docs.map(d => ({ id: d.id, ...d.data() }))
+    cb(data.sort((a, b) => (a.dueDay || 1) - (b.dueDay || 1)))
+  })
 }
 
-export const addBill    = (data) => { const list = read('bills', []); list.push({ ...data, id: uid(), createdAt: Date.now() }); write('bills', list); emit('bills') }
-export const updateBill = (id, data) => { write('bills', read('bills', []).map(b => b.id === id ? { ...b, ...data } : b)); emit('bills') }
-export const deleteBill = (id) => { write('bills', read('bills', []).filter(b => b.id !== id)); emit('bills') }
+export const addBill    = async (data) => {
+  const id = uid()
+  await setDoc(userDoc('bills', id), { ...data, id, createdAt: Date.now() })
+}
+export const updateBill = async (id, data) => {
+  await updateDoc(userDoc('bills', id), data)
+}
+export const deleteBill = async (id) => {
+  await deleteDoc(userDoc('bills', id))
+}
 
 // ── Loans ─────────────────────────────────────────────────────────────────────
-// Loan schema:
-//   id, name, icon, color, loanAmount (total borrowed), interestRate (% annual),
-//   termMonths, startDate (YYYY-MM-DD), installmentAmount, dueDay (1-31),
-//   notes, createdAt
-// Loan payments schema (separate key 'loanPayments'):
-//   id, loanId, amount, date (YYYY-MM-DD), note, createdAt
-
 export const BUILTIN_LOAN_TYPES = [
   { name: 'Home Loan',     icon: '🏠', color: '#0284c7' },
   { name: 'Car Loan',      icon: '🚗', color: '#059669' },
@@ -248,45 +284,59 @@ export const BUILTIN_LOAN_TYPES = [
   { name: 'Other',         icon: '🏦', color: '#6b7280' },
 ]
 
-export const LOAN_TYPES = BUILTIN_LOAN_TYPES // legacy alias
-
-export const getLoanTypes = () => [...BUILTIN_LOAN_TYPES, ...read('customLoanTypes', [])]
+export const LOAN_TYPES   = BUILTIN_LOAN_TYPES
+export const getLoanTypes = () => BUILTIN_LOAN_TYPES
 
 export const subscribeLoanTypes = (cb) => {
-  const notify = () => cb(getLoanTypes())
-  notify()
-  return on('customLoanTypes', notify)
+  const q = query(userCol('customLoanTypes'), orderBy('createdAt'))
+  return onSnapshot(q, snap => {
+    const custom = snap.docs.map(d => ({ id: d.id, ...d.data() }))
+    cb([...BUILTIN_LOAN_TYPES, ...custom])
+  })
 }
 
-export const addCustomLoanType = (data) => {
-  const list = read('customLoanTypes', [])
-  list.push({ ...data, id: uid(), custom: true })
-  write('customLoanTypes', list)
-  emit('customLoanTypes')
+export const addCustomLoanType = async (data) => {
+  await addDoc(userCol('customLoanTypes'), { ...data, custom: true, createdAt: Date.now() })
 }
-
-export const deleteCustomLoanType = (name) => {
-  write('customLoanTypes', read('customLoanTypes', []).filter(p => p.name !== name))
-  emit('customLoanTypes')
+export const deleteCustomLoanType = async (name) => {
+  const snap = await getDocs(userCol('customLoanTypes'))
+  const match = snap.docs.find(d => d.data().name === name)
+  if (match) await deleteDoc(match.ref)
 }
 
 export const subscribeLoans = (cb) => {
-  const notify = () => cb([...read('loans', [])].sort((a,b) => a.createdAt - b.createdAt))
-  notify()
-  return on('loans', notify)
+  const q = query(userCol('loans'), orderBy('createdAt'))
+  return onSnapshot(q, snap => {
+    cb(snap.docs.map(d => ({ id: d.id, ...d.data() })))
+  })
 }
-export const addLoan    = (data) => { const list = read('loans', []); list.push({ ...data, id: uid(), createdAt: Date.now() }); write('loans', list); emit('loans') }
-export const updateLoan = (id, data) => { write('loans', read('loans', []).map(l => l.id === id ? { ...l, ...data } : l)); emit('loans') }
-export const deleteLoan = (id) => {
-  write('loans', read('loans', []).filter(l => l.id !== id))
-  write('loanPayments', read('loanPayments', []).filter(p => p.loanId !== id))
-  emit('loans'); emit('loanPayments')
+
+export const addLoan    = async (data) => {
+  const id = uid()
+  await setDoc(userDoc('loans', id), { ...data, id, createdAt: Date.now() })
+}
+export const updateLoan = async (id, data) => {
+  await updateDoc(userDoc('loans', id), data)
+}
+export const deleteLoan = async (id) => {
+  const batch = writeBatch(db)
+  batch.delete(userDoc('loans', id))
+  const snap = await getDocs(userCol('loanPayments'))
+  snap.docs.filter(d => d.data().loanId === id).forEach(d => batch.delete(d.ref))
+  await batch.commit()
 }
 
 export const subscribeLoanPayments = (cb) => {
-  const notify = () => cb([...read('loanPayments', [])].sort((a,b) => b.date.localeCompare(a.date) || b.createdAt - a.createdAt))
-  notify()
-  return on('loanPayments', notify)
+  const q = query(userCol('loanPayments'), orderBy('date', 'desc'), orderBy('createdAt', 'desc'))
+  return onSnapshot(q, snap => {
+    cb(snap.docs.map(d => ({ id: d.id, ...d.data() })))
+  })
 }
-export const addLoanPayment = (data) => { const list = read('loanPayments', []); list.push({ ...data, id: uid(), createdAt: Date.now() }); write('loanPayments', list); emit('loanPayments') }
-export const deleteLoanPayment = (id) => { write('loanPayments', read('loanPayments', []).filter(p => p.id !== id)); emit('loanPayments') }
+
+export const addLoanPayment = async (data) => {
+  const id = uid()
+  await setDoc(userDoc('loanPayments', id), { ...data, id, createdAt: Date.now() })
+}
+export const deleteLoanPayment = async (id) => {
+  await deleteDoc(userDoc('loanPayments', id))
+}
