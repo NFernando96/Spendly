@@ -52,16 +52,19 @@ export default function Settings() {
 
   const cycles = ['day','week','month','year']
 
-  const [backingUp, setBackingUp] = useState(false)
+  const [backingUp, setBackingUp]   = useState(false)
   const [backupDone, setBackupDone] = useState(false)
+  const [restoring, setRestoring]   = useState(false)
+  const [restoreMsg, setRestoreMsg] = useState('')
+
+  const COLS = ['accounts','transactions','bills','loans','loanPayments','recurring','quickExpenses','customExpenseCategories','customIncomeCategories','customBillPresets','customLoanTypes']
 
   const downloadBackup = async () => {
     setBackingUp(true)
     try {
       const uid = auth.currentUser.uid
-      const cols = ['accounts','transactions','bills','loans','loanPayments','recurring','quickExpenses','customExpenseCategories','customIncomeCategories','customBillPresets','customLoanTypes']
-      const backup = { exportedAt: new Date().toISOString(), uid, collections: {} }
-      await Promise.all(cols.map(async (col) => {
+      const backup = { exportedAt: new Date().toISOString(), version: 1, uid, collections: {} }
+      await Promise.all(COLS.map(async (col) => {
         const snap = await getDocs(collection(db, 'users', uid, col))
         backup.collections[col] = snap.docs.map(d => d.data())
       }))
@@ -76,6 +79,42 @@ export default function Settings() {
       setTimeout(() => setBackupDone(false), 3000)
     } catch(e) { console.error(e) }
     setBackingUp(false)
+  }
+
+  const restoreBackup = async (e) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    if (!confirm('⚠️ This will OVERWRITE all your current data with the backup file. This cannot be undone. Continue?')) {
+      e.target.value = ''
+      return
+    }
+    setRestoring(true)
+    setRestoreMsg('')
+    try {
+      const text = await file.text()
+      const data = JSON.parse(text)
+      if (!data.collections) throw new Error('Invalid backup file')
+      const uid = auth.currentUser.uid
+      const { setDoc: sd, doc: dc, deleteDoc: dd } = await import('firebase/firestore')
+      for (const colName of COLS) {
+        const items = data.collections[colName]
+        if (!items) continue
+        // Delete existing
+        const existing = await getDocs(collection(db, 'users', uid, colName))
+        await Promise.all(existing.docs.map(d => dd(d.ref)))
+        // Write backup items
+        await Promise.all(items.filter(item => item.id).map(item =>
+          sd(dc(db, 'users', uid, colName, item.id), item)
+        ))
+      }
+      setRestoreMsg('✅ Data restored! Refreshing…')
+      setTimeout(() => window.location.reload(), 2000)
+    } catch(e) {
+      console.error(e)
+      setRestoreMsg('❌ Restore failed. Make sure the file is a valid Spendly backup.')
+    }
+    setRestoring(false)
+    e.target.value = ''
   }
 
   const saveRecurring = async () => {
@@ -296,38 +335,69 @@ export default function Settings() {
         <SectionHead icon={<Download size={15} color="#0284c7" />} iconBg="#0284c715" title="Data Backup" />
       </div>
       <p style={{ fontSize:13, color:'var(--text2)', marginBottom:14 }}>
-        Download all your data as a JSON file. Keep it safe — use it to restore if anything goes wrong.
+        Your data is automatically backed up to Firestore every day when you open the app (last 7 days kept). You can also download a local copy or restore from a file.
       </p>
-      <div style={{ background:'var(--surface)', border:'1px solid var(--border)', borderRadius:'var(--r-lg)', padding:'16px', marginBottom:28, boxShadow:'var(--shadow)' }}>
-        <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', gap:12 }}>
+      <div style={{ background:'var(--surface)', border:'1px solid var(--border)', borderRadius:'var(--r-lg)', overflow:'hidden', marginBottom:28, boxShadow:'var(--shadow)' }}>
+
+        {/* Download row */}
+        <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', gap:12, padding:'14px 16px', borderBottom:'1px solid var(--border)' }}>
           <div>
-            <p style={{ fontSize:14, fontWeight:600, color:'var(--text)', marginBottom:3 }}>Export all data</p>
-            <p style={{ fontSize:12, color:'var(--text2)' }}>Accounts · Transactions · Bills · Loans · Recurring</p>
+            <p style={{ fontSize:14, fontWeight:600, color:'var(--text)', marginBottom:2 }}>Download backup</p>
+            <p style={{ fontSize:12, color:'var(--text2)' }}>Save a local .json copy of all your data</p>
           </div>
           <button
             onClick={downloadBackup}
             disabled={backingUp}
             style={{
               flexShrink:0, display:'flex', alignItems:'center', gap:7,
-              padding:'10px 18px', borderRadius:'var(--r-lg)',
+              padding:'9px 16px', borderRadius:'var(--r-lg)',
               background: backupDone ? '#10b981' : 'var(--accent)',
               color:'#fff', fontSize:13, fontWeight:700,
               border:'none', cursor: backingUp ? 'wait' : 'pointer',
               opacity: backingUp ? 0.7 : 1, transition:'all 0.2s',
-              boxShadow:'0 2px 8px rgba(124,58,237,0.25)',
             }}
           >
             {backingUp
-              ? <><span style={{ width:14, height:14, border:'2px solid rgba(255,255,255,0.4)', borderTopColor:'#fff', borderRadius:'50%', display:'inline-block', animation:'spin 0.7s linear infinite' }} /> Exporting…</>
-              : backupDone ? <>✓ Downloaded!</>
-              : <><Download size={14}/> Download</>
+              ? <><span style={{ width:13, height:13, border:'2px solid rgba(255,255,255,0.4)', borderTopColor:'#fff', borderRadius:'50%', display:'inline-block', animation:'spin 0.7s linear infinite' }} /></>
+              : backupDone ? '✓ Done!'
+              : <><Download size={13}/> Download</>
             }
           </button>
         </div>
-        <div style={{ marginTop:12, padding:'10px 12px', background:'var(--surface2)', borderRadius:'var(--r)', border:'1px solid var(--border)' }}>
-          <p style={{ fontSize:11, color:'var(--text3)', lineHeight:1.6 }}>
-            💡 <strong style={{ color:'var(--text2)' }}>Tip:</strong> Back up monthly or before making big changes. The file contains all your Firestore data and can be used to manually restore if needed.
-          </p>
+
+        {/* Restore row */}
+        <div style={{ padding:'14px 16px' }}>
+          <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', gap:12 }}>
+            <div>
+              <p style={{ fontSize:14, fontWeight:600, color:'var(--text)', marginBottom:2 }}>Restore from file</p>
+              <p style={{ fontSize:12, color:'var(--text2)' }}>Upload a .json backup to overwrite current data</p>
+            </div>
+            <label style={{
+              flexShrink:0, display:'flex', alignItems:'center', gap:7,
+              padding:'9px 16px', borderRadius:'var(--r-lg)',
+              background: restoring ? 'var(--surface2)' : 'var(--danger-bg)',
+              color: restoring ? 'var(--text2)' : 'var(--danger)',
+              border:`1.5px solid ${restoring ? 'var(--border)' : 'var(--danger)'}`,
+              fontSize:13, fontWeight:700, cursor: restoring ? 'wait' : 'pointer',
+              transition:'all 0.2s',
+            }}>
+              <input type="file" accept=".json" onChange={restoreBackup} style={{ display:'none' }} disabled={restoring} />
+              {restoring
+                ? <><span style={{ width:13, height:13, border:'2px solid var(--border2)', borderTopColor:'var(--accent)', borderRadius:'50%', display:'inline-block', animation:'spin 0.7s linear infinite' }} /> Restoring…</>
+                : <>↑ Restore</>
+              }
+            </label>
+          </div>
+          {restoreMsg && (
+            <p style={{ marginTop:10, fontSize:13, fontWeight:600, color: restoreMsg.startsWith('✅') ? '#10b981' : 'var(--danger)' }}>
+              {restoreMsg}
+            </p>
+          )}
+          <div style={{ marginTop:12, padding:'9px 12px', background:'var(--surface2)', borderRadius:'var(--r)', border:'1px solid var(--border)' }}>
+            <p style={{ fontSize:11, color:'var(--text3)', lineHeight:1.6 }}>
+              ⚠️ <strong style={{ color:'var(--text2)' }}>Warning:</strong> Restoring will overwrite ALL current data. Auto-backup runs daily — check Firestore Console → <code>users/[uid]/autoBackups</code> for recent snapshots.
+            </p>
+          </div>
         </div>
       </div>
 

@@ -6,6 +6,8 @@ import {
   subscribeBills,
   subscribeLoans, subscribeLoanPayments,
 } from '../services/db'
+import { collection, getDocs, doc, setDoc } from 'firebase/firestore'
+import { db, auth } from '../services/firebase'
 
 const Ctx = createContext(null)
 
@@ -67,6 +69,41 @@ export const AppProvider = ({ children }) => {
     const u6 = subscribeIncomeCategories(setIncomeCats)
     return () => { u1(); u2(); u3(); u4(); u5(); u6(); u7(); u8(); u9() }
   }, [])
+
+  // ── Auto daily backup to Firestore ────────────────────────────────────────
+  // Runs once per day when the app is opened. Stores last 7 daily snapshots
+  // under users/{uid}/autoBackups/{YYYY-MM-DD}
+  useEffect(() => {
+    if (loading) return // wait until data is loaded
+    const runBackup = async () => {
+      try {
+        const today = new Date().toISOString().split('T')[0]
+        const lastBackup = localStorage.getItem('lastAutoBackup')
+        if (lastBackup === today) return // already backed up today
+
+        const uid  = auth.currentUser?.uid
+        if (!uid) return
+
+        const cols = ['accounts','transactions','bills','loans','loanPayments','recurring','quickExpenses']
+        const backup = { backedUpAt: new Date().toISOString(), date: today, collections: {} }
+
+        await Promise.all(cols.map(async (col) => {
+          const snap = await getDocs(collection(db, 'users', uid, col))
+          backup.collections[col] = snap.docs.map(d => d.data())
+        }))
+
+        // Save under users/{uid}/autoBackups/{date}
+        await setDoc(doc(db, 'users', uid, 'autoBackups', today), backup)
+
+        // Keep track locally so we don't re-run today
+        localStorage.setItem('lastAutoBackup', today)
+        console.log(`[Spendly] Auto backup saved for ${today}`)
+      } catch(e) {
+        console.warn('[Spendly] Auto backup failed:', e)
+      }
+    }
+    runBackup()
+  }, [loading])
 
   const todayStr = new Date().toISOString().split('T')[0]
   const monthStr = todayStr.slice(0, 7)
