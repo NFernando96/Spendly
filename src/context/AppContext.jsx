@@ -5,6 +5,7 @@ import {
   subscribeExpenseCategories, subscribeIncomeCategories,
   subscribeBills,
   subscribeLoans, subscribeLoanPayments,
+  subscribeRecurringCategories,
 } from '../services/db'
 import { collection, getDocs, doc, setDoc } from 'firebase/firestore'
 import { db, auth } from '../services/firebase'
@@ -26,9 +27,10 @@ export const AppProvider = ({ children }) => {
   const [bills, setBills]                     = useState([])
   const [loans, setLoans]                     = useState([])
   const [loanPayments, setLoanPayments]       = useState([])
-  const [expenseCategories, setExpenseCats]   = useState([])
-  const [incomeCategories, setIncomeCats]     = useState([])
-  const [loading, setLoading]                 = useState(true)
+  const [expenseCategories, setExpenseCats]         = useState([])
+  const [incomeCategories, setIncomeCats]           = useState([])
+  const [recurringCategories, setRecurringCats]     = useState([])
+  const [loading, setLoading]                       = useState(true)
 
   // Default: hidden (true) so sensitive data is hidden on load
   const [balanceHidden, setBalanceHidden] = useState(() => {
@@ -67,7 +69,8 @@ export const AppProvider = ({ children }) => {
     const u9 = subscribeLoanPayments(setLoanPayments)
     const u5 = subscribeExpenseCategories(setExpenseCats)
     const u6 = subscribeIncomeCategories(setIncomeCats)
-    return () => { u1(); u2(); u3(); u4(); u5(); u6(); u7(); u8(); u9() }
+    const u10 = subscribeRecurringCategories(setRecurringCats)
+    return () => { u1(); u2(); u3(); u4(); u5(); u6(); u7(); u8(); u9(); u10() }
   }, [])
 
   // ── Auto daily backup to Firestore ────────────────────────────────────────
@@ -122,7 +125,7 @@ export const AppProvider = ({ children }) => {
   return (
     <Ctx.Provider value={{
       accounts, transactions, quickExpenses, recurring, bills, loans, loanPayments,
-      expenseCategories, incomeCategories,
+      expenseCategories, incomeCategories, recurringCategories,
       loading,
       totalBalance, todayExpenses, monthExpenses, todayStr, monthStr,
       balanceHidden, toggleBalance,

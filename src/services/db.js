@@ -340,3 +340,37 @@ export const addLoanPayment = async (data) => {
 export const deleteLoanPayment = async (id) => {
   await deleteDoc(userDoc('loanPayments', id))
 }
+
+// ── Recurring Categories ───────────────────────────────────────────────────────
+export const BUILTIN_RECURRING_CATEGORIES = [
+  { name: 'Subscriptions', icon: '📱', color: '#06b6d4' },
+  { name: 'Rent',          icon: '🏠', color: '#10b981' },
+  { name: 'Insurance',     icon: '🛡️', color: '#059669' },
+  { name: 'Utilities',     icon: '💡', color: '#f59e0b' },
+  { name: 'Transport',     icon: '🚌', color: '#3b82f6' },
+  { name: 'Health',        icon: '💊', color: '#ef4444' },
+  { name: 'Education',     icon: '📚', color: '#84cc16' },
+  { name: 'Savings',       icon: '🏦', color: '#8b5cf6' },
+  { name: 'Family',        icon: '👨‍👩‍👧', color: '#ec4899' },
+  { name: 'Other',         icon: '📦', color: '#6b7280' },
+]
+
+export const RECURRING_CATEGORIES = BUILTIN_RECURRING_CATEGORIES
+
+export const subscribeRecurringCategories = (cb) => {
+  const q = query(userCol('customRecurringCategories'), orderBy('createdAt'))
+  return onSnapshot(q, snap => {
+    const custom = snap.docs.map(d => ({ id: d.id, ...d.data() }))
+    cb([...BUILTIN_RECURRING_CATEGORIES, ...custom])
+  })
+}
+
+export const addCustomRecurringCategory = async (data) => {
+  await addDoc(userCol('customRecurringCategories'), { ...data, custom: true, createdAt: Date.now() })
+}
+
+export const deleteCustomRecurringCategory = async (name) => {
+  const snap = await getDocs(userCol('customRecurringCategories'))
+  const match = snap.docs.find(d => d.data().name === name)
+  if (match) await deleteDoc(match.ref)
+}

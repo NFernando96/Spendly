@@ -7,6 +7,7 @@ import { addRecurring, updateRecurring, deleteRecurring, addCustomCategory, dele
          BUILTIN_EXPENSE_CATEGORIES, BUILTIN_INCOME_CATEGORIES,
          addCustomBillPreset, deleteCustomBillPreset, subscribeBillPresets,
          addCustomLoanType, deleteCustomLoanType, subscribeLoanTypes,
+         addCustomRecurringCategory, deleteCustomRecurringCategory,
          BUILTIN_BILL_PRESETS, BUILTIN_LOAN_TYPES } from '../services/db'
 import { collection, getDocs } from 'firebase/firestore'
 import { db, auth } from '../services/firebase'
@@ -16,7 +17,7 @@ const EMOJI_POOL = ['🏷️','🎯','⚡','🔑','🌟','🎪','🎸','🍕','�
 const CAT_COLORS = ['#10b981','#3b82f6','#f59e0b','#ec4899','#ef4444','#8b5cf6','#06b6d4','#f97316','#84cc16','#a855f7','#6b7280','#14b8a6','#e879f9','#fb923c','#4ade80']
 
 export default function Settings() {
-  const { recurring, quickExpenses, theme, setTheme, expenseCategories, incomeCategories } = useApp()
+  const { recurring, quickExpenses, theme, setTheme, expenseCategories, incomeCategories, recurringCategories } = useApp()
 
   const [showRecurring, setShowRecurring] = useState(false)
   const [recurringForm, setRecurringForm] = useState(BLANK_RECURRING)
@@ -43,6 +44,10 @@ export default function Settings() {
   const [loanCatForm, setLoanCatForm] = useState({ name:'', icon:'🏦', color:'#6b7280' })
   const [savingLC, setSavingLC] = useState(false)
   const [loanCatExpanded, setLoanCatExpanded] = useState(false)
+
+  const [showRecurringCat, setShowRecurringCat]   = useState(false)
+  const [recurringCatForm, setRecurringCatForm]   = useState({ name:'', icon:'🔄', color:'#06b6d4' })
+  const [savingRC, setSavingRC]                   = useState(false)
 
   useEffect(() => {
     const unsub1 = subscribeBillPresets(setBillPresets)
@@ -164,6 +169,14 @@ export default function Settings() {
     setSavingLC(false)
   }
 
+  const saveRecurringCat = async () => {
+    if (!recurringCatForm.name.trim()) return
+    setSavingRC(true)
+    try { await addCustomRecurringCategory({ name:recurringCatForm.name.trim(), icon:recurringCatForm.icon, color:recurringCatForm.color }); setShowRecurringCat(false); setRecurringCatForm({ name:'', icon:'🔄', color:'#06b6d4' }) }
+    catch(e){console.error(e)}
+    setSavingRC(false)
+  }
+
   // Separate builtins from custom
   const customExpense = expenseCategories.filter(c => c.custom)
   const customIncome  = incomeCategories.filter(c => c.custom)
@@ -202,34 +215,41 @@ export default function Settings() {
       {(() => {
         // Tab config
         const tabs = [
-          { key:'expense',  label:'Expenses',   icon:'💸' },
-          { key:'income',   label:'Income',     icon:'💰' },
-          { key:'bills',    label:'Bills',      icon:'💡' },
-          { key:'loans',    label:'Loans',      icon:'🏦' },
+          { key:'expense',   label:'Expenses',   icon:'💸' },
+          { key:'income',    label:'Income',     icon:'💰' },
+          { key:'bills',     label:'Bills',      icon:'💡' },
+          { key:'loans',     label:'Loans',      icon:'🏦' },
+          { key:'recurring', label:'Recurring',  icon:'🔄' },
         ]
-        const isExpInc = catSection === 'expense' || catSection === 'income'
-        const isBill   = catSection === 'bills'
-        const isLoan   = catSection === 'loans'
+        const isExpInc   = catSection === 'expense' || catSection === 'income'
+        const isBill     = catSection === 'bills'
+        const isLoan     = catSection === 'loans'
+        const isRecurring = catSection === 'recurring'
 
-        const displayList  = isExpInc ? (catSection === 'expense' ? expenseCategories : incomeCategories)
-                            : isBill  ? billPresets
-                            : loanTypes
-        const hasCustom    = isExpInc ? displayList.filter(c=>c.custom).length === 0
-                            : isBill  ? billPresets.filter(c=>c.custom).length === 0
-                            : loanTypes.filter(c=>c.custom).length === 0
-        const noCustomLabel = isExpInc ? `No custom ${catSection} categories yet.`
-                            : isBill  ? 'No custom bill types yet.'
-                            : 'No custom loan types yet.'
+        const displayList  = isExpInc    ? (catSection === 'expense' ? expenseCategories : incomeCategories)
+                           : isBill     ? billPresets
+                           : isLoan     ? loanTypes
+                           : recurringCategories
+        const hasCustom    = isExpInc    ? displayList.filter(c=>c.custom).length === 0
+                           : isBill     ? billPresets.filter(c=>c.custom).length === 0
+                           : isLoan     ? loanTypes.filter(c=>c.custom).length === 0
+                           : recurringCategories.filter(c=>c.custom).length === 0
+        const noCustomLabel = isExpInc   ? `No custom ${catSection} categories yet.`
+                           : isBill     ? 'No custom bill types yet.'
+                           : isLoan     ? 'No custom loan types yet.'
+                           : 'No custom recurring categories yet.'
         const onAdd = () => {
-          if (isBill)  return setShowBillCat(true)
-          if (isLoan)  return setShowLoanCat(true)
+          if (isBill)      return setShowBillCat(true)
+          if (isLoan)      return setShowLoanCat(true)
+          if (isRecurring) return setShowRecurringCat(true)
           setCatForm(f => ({ ...f, type: catSection }))
           setShowCat(true)
         }
         const onDelete = (c) => {
-          if (isBill)       deleteCustomBillPreset(c.name)
-          else if (isLoan)  deleteCustomLoanType(c.name)
-          else              deleteCustomCategory(catSection, c.name)
+          if (isBill)           deleteCustomBillPreset(c.name)
+          else if (isLoan)      deleteCustomLoanType(c.name)
+          else if (isRecurring) deleteCustomRecurringCategory(c.name)
+          else                  deleteCustomCategory(catSection, c.name)
         }
         const expanded  = isBill ? billCatExpanded : isLoan ? loanCatExpanded : catExpanded
         const setExpand = isBill ? setBillCatExpanded : isLoan ? setLoanCatExpanded : setCatExpanded
@@ -583,6 +603,51 @@ export default function Settings() {
         document.body
       )}
 
+      {/* ── Add Recurring Category Modal ── */}
+      {showRecurringCat && createPortal(
+        <div onClick={e=>e.target===e.currentTarget&&setShowRecurringCat(false)} style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.55)', backdropFilter:'blur(6px)', display:'flex', alignItems:'flex-end', justifyContent:'center', zIndex:9999 }}>
+          <div onClick={e=>e.stopPropagation()} style={{ background:'var(--surface)', width:'100%', maxWidth:520, borderRadius:'var(--r-xl) var(--r-xl) 0 0', padding:'12px 20px 44px', animation:'slideUp 0.28s cubic-bezier(0.32,0.72,0,1) both', maxHeight:'85dvh', overflowY:'auto' }}>
+            <div style={{ display:'flex', justifyContent:'center', paddingBottom:12 }}>
+              <div style={{ width:36, height:4, borderRadius:2, background:'var(--border2)' }} />
+            </div>
+            <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:20 }}>
+              <h2 style={{ fontSize:20, fontWeight:700, color:'var(--text)' }}>New Recurring Category</h2>
+              <button onClick={() => setShowRecurringCat(false)} style={{ width:36, height:36, borderRadius:'50%', background:'var(--surface2)', border:'1.5px solid var(--border)', display:'flex', alignItems:'center', justifyContent:'center', cursor:'pointer' }}>
+                <X size={16} color="var(--text2)" />
+              </button>
+            </div>
+            <F label="Name">
+              <input value={recurringCatForm.name} onChange={e=>setRecurringCatForm(f=>({...f,name:e.target.value}))} placeholder="e.g. Membership" style={inp} />
+            </F>
+            <F label="Icon">
+              <div style={{ display:'flex', flexWrap:'wrap', gap:8 }}>
+                {EMOJI_POOL.map(em => (
+                  <button key={em} onClick={() => setRecurringCatForm(f=>({...f,icon:em}))} style={{ width:38, height:38, borderRadius:10, fontSize:18, background: recurringCatForm.icon===em ? 'var(--accent-bg)' : 'var(--surface2)', border:`1.5px solid ${recurringCatForm.icon===em ? 'var(--accent)' : 'var(--border)'}`, display:'flex', alignItems:'center', justifyContent:'center', transition:'all 0.12s' }}>{em}</button>
+                ))}
+              </div>
+            </F>
+            <F label="Color">
+              <div style={{ display:'flex', flexWrap:'wrap', gap:8 }}>
+                {CAT_COLORS.map(col => (
+                  <button key={col} onClick={() => setRecurringCatForm(f=>({...f,color:col}))} style={{ width:30, height:30, borderRadius:'50%', background:col, border:`3px solid ${recurringCatForm.color===col ? 'var(--text)' : 'transparent'}`, transition:'border 0.12s', outline:'none' }} />
+                ))}
+              </div>
+            </F>
+            <div style={{ marginBottom:16 }}>
+              <label style={{ display:'block', fontSize:11, fontWeight:700, color:'var(--text2)', marginBottom:8, textTransform:'uppercase', letterSpacing:'0.06em' }}>Preview</label>
+              <div style={{ display:'inline-flex', alignItems:'center', gap:6, padding:'6px 14px', borderRadius:999, background:recurringCatForm.color+'18', border:`1.5px solid ${recurringCatForm.color}60` }}>
+                <span style={{ fontSize:16 }}>{recurringCatForm.icon}</span>
+                <span style={{ fontSize:13, fontWeight:600, color:recurringCatForm.color }}>{recurringCatForm.name || 'Category name'}</span>
+              </div>
+            </div>
+            <button onClick={saveRecurringCat} disabled={!recurringCatForm.name.trim()||savingRC} style={{ width:'100%', padding:14, borderRadius:'var(--r-lg)', fontSize:15, fontWeight:700, background:'var(--accent)', color:'#fff', opacity:!recurringCatForm.name.trim()||savingRC?0.4:1, transition:'opacity 0.15s' }}>
+              {savingRC ? 'Saving…' : 'Add Recurring Category'}
+            </button>
+          </div>
+        </div>,
+        document.body
+      )}
+
       {/* ── Add Recurring Modal ── */}
       {showRecurring && createPortal(
         <div onClick={e=>{ if(e.target===e.currentTarget){ setShowRecurring(false); setEditingRecurring(null); setRecurringForm(BLANK_RECURRING) }}} style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.55)', backdropFilter:'blur(6px)', display:'flex', alignItems:'flex-end', justifyContent:'center', zIndex:9999 }}>
@@ -605,7 +670,7 @@ export default function Settings() {
 
             <F label="Category">
               <div style={{ display:'flex', flexWrap:'wrap', gap:6 }}>
-                {expenseCategories.map(c => (
+                {recurringCategories.map(c => (
                   <button key={c.name} onClick={() => setRecurringForm(f=>({...f,category:c.name}))} style={{
                     padding:'6px 12px', borderRadius:999, fontSize:12,
                     background: recurringForm.category===c.name ? c.color+'20' : 'var(--surface2)',
