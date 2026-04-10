@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom'
 import { TrendingUp, Calendar, ArrowUpRight, ArrowDownLeft, Eye, EyeOff, AlertTriangle, Clock, Receipt, CheckCircle2, Trash2, Pencil, X } from 'lucide-react'
 import { useApp } from '../context/AppContext'
 import { fmt, fmtDate, groupByDate } from '../utils/helpers'
-import { getCatMeta, deleteBill, deleteLoan, addLoanPayment, addTransaction, updateRecurring, deleteRecurring } from '../services/db'
+import { getCatMeta, deleteBill, deleteLoan, addLoanPayment, addTransaction, updateRecurring, deleteRecurring, updateAccount } from '../services/db'
 import TxRow from '../components/TxRow'
 import AddModal from '../components/AddModal'
 
@@ -14,7 +14,9 @@ export default function Dashboard() {
     balanceHidden, toggleBalance, expenseCategories,
   } = useApp()
 
-  const [prefill, setPrefill] = useState(null)
+  const [editingAccount, setEditingAccount] = useState(null)
+  const [accountForm, setAccountForm]       = useState({})
+  const [savingAcct, setSavingAcct]         = useState(false)
   const [settlingBill, setSettlingBill] = useState(null) // bill being settled
   const [settlingLoan, setSettlingLoan] = useState(null) // loan being paid from dashboard
   const [settleAccount, setSettleAccount] = useState('')
@@ -22,7 +24,37 @@ export default function Dashboard() {
   const [recurringForm, setRecurringForm] = useState({ description:'', amount:'', category:'Bills', cycle:'month' })
   const [savingR, setSavingR] = useState(false)
 
-  const saveRecurring = async () => {
+  const openEditAccount = (a) => {
+    setEditingAccount(a)
+    setAccountForm({
+      name: a.name, type: a.type,
+      balance: String(a.balance || 0),
+      minPayment: String(a.minPayment || ''),
+      creditLimit: String(a.creditLimit || ''),
+      paymentDueDate: a.paymentDueDate || '',
+    })
+  }
+
+  const saveAccount = async () => {
+    if (!accountForm.name || !editingAccount) return
+    setSavingAcct(true)
+    try {
+      const d = {
+        name: accountForm.name.trim(), type: accountForm.type,
+        balance: parseFloat(accountForm.balance) || 0,
+        ...(accountForm.type === 'credit' ? {
+          minPayment: parseFloat(accountForm.minPayment) || 0,
+          creditLimit: parseFloat(accountForm.creditLimit) || 0,
+          paymentDueDate: accountForm.paymentDueDate || null,
+        } : {}),
+      }
+      await updateAccount(editingAccount.id, d)
+      setEditingAccount(null)
+    } catch(e) { console.error(e) }
+    setSavingAcct(false)
+  }
+
+  const [prefill, setPrefill] = useState(null)
     if (!recurringForm.description || !recurringForm.amount || !editingRecurring) return
     setSavingR(true)
     try {
@@ -333,38 +365,45 @@ export default function Dashboard() {
         })
       })()}
 
-      {/* ── Account chips ── */}
-      <div style={{ display:'flex', gap:8, overflowX:'auto', scrollbarWidth:'none', marginBottom:20, paddingBottom:2 }}>
+      {/* ── Account chips — click to edit ── */}
+      <div style={{ display:'flex', gap:8, overflowX:'auto', scrollbarWidth:'none', marginBottom:14, paddingBottom:2 }}>
         {accounts.map(a => {
           const icons = { cash:'💵', bank:'🏦', credit:'💳' }
           const isDebt = a.type === 'credit' && (a.balance || 0) > 0
           return (
-            <div key={a.id} style={{
-              flexShrink:0, background:'var(--surface)', border:'1px solid var(--border)',
-              borderRadius:'var(--r-lg)', padding:'11px 14px', minWidth:120, boxShadow:'var(--shadow)',
-            }}>
-              <div style={{ display:'flex', alignItems:'center', gap:5, marginBottom:5 }}>
-                <span style={{ fontSize:14 }}>{icons[a.type]||'🏦'}</span>
-                <p style={{ fontSize:11, color:'var(--text2)', fontWeight:500, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap', maxWidth:80 }}>{a.name}</p>
+            <button key={a.id}
+              onClick={() => openEditAccount(a)}
+              style={{
+                flexShrink:0, background:'var(--surface)', border:'1.5px solid var(--border)',
+                borderRadius:'var(--r-lg)', padding:'12px 16px', minWidth:130, boxShadow:'var(--shadow)',
+                textAlign:'left', cursor:'pointer', transition:'all 0.15s',
+              }}
+              onMouseEnter={e => { e.currentTarget.style.borderColor='var(--accent)'; e.currentTarget.style.boxShadow='0 4px 16px rgba(124,58,237,0.15)'; e.currentTarget.style.transform='translateY(-1px)' }}
+              onMouseLeave={e => { e.currentTarget.style.borderColor='var(--border)'; e.currentTarget.style.boxShadow='var(--shadow)'; e.currentTarget.style.transform='none' }}
+              onTouchStart={e => e.currentTarget.style.transform='scale(0.97)'}
+              onTouchEnd={e => e.currentTarget.style.transform='none'}
+            >
+              <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:6 }}>
+                <span style={{ fontSize:18 }}>{icons[a.type]||'🏦'}</span>
+                <span style={{ fontSize:9, fontWeight:700, color:'var(--text3)', textTransform:'uppercase', letterSpacing:'0.06em', background:'var(--surface2)', padding:'2px 6px', borderRadius:999 }}>{a.type}</span>
               </div>
-              <p style={{ fontFamily:'var(--mono)', fontSize:15, fontWeight:700, color: isDebt ? 'var(--danger)' : 'var(--text)' }}>
+              <p style={{ fontSize:11, color:'var(--text2)', fontWeight:500, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap', marginBottom:4 }}>{a.name}</p>
+              <p style={{ fontFamily:'var(--mono)', fontSize:16, fontWeight:800, color: isDebt ? 'var(--danger)' : 'var(--text)' }}>
                 {mask(fmt(a.balance||0))}
               </p>
-            </div>
+            </button>
           )
         })}
       </div>
 
-      {/* ── Quick add ── */}
+      {/* ── Quick add — compact pills ── */}
       {quickExpenses.length > 0 && (
         <div style={{ marginBottom:20 }}>
           <SectionTitle>Quick Add</SectionTitle>
-          {/* Horizontal scroll strip — no wrapping, swipe on mobile */}
           <div style={{
-            display:'flex', gap:8,
-            overflowX:'auto', overflowY:'visible',
-            scrollbarWidth:'none',
-            paddingBottom:6, paddingTop:2,
+            display:'flex', gap:6,
+            overflowX:'auto', scrollbarWidth:'none',
+            paddingBottom:4, paddingTop:1,
             marginLeft:-16, marginRight:-16,
             paddingLeft:16, paddingRight:16,
           }}>
@@ -373,22 +412,21 @@ export default function Dashboard() {
                 onClick={() => setPrefill({ type:'expense', description:q.description, amount:q.amount, category:q.category, accountId:q.accountId })}
                 style={{
                   flexShrink:0,
-                  padding:'9px 14px', borderRadius:'var(--r-lg)',
-                  background:'var(--surface)',
-                  border:'1.5px solid var(--border)',
-                  boxShadow:'var(--shadow)',
-                  display:'flex', flexDirection:'column', alignItems:'flex-start', gap:4,
+                  padding:'5px 10px', borderRadius:999,
+                  background:'var(--surface2)',
+                  border:'1px solid var(--border)',
+                  display:'flex', alignItems:'center', gap:5,
                   transition:'all 0.15s', cursor:'pointer',
-                  minWidth:100,
+                  whiteSpace:'nowrap',
                 }}
-                onMouseEnter={e => { e.currentTarget.style.borderColor='var(--accent)'; e.currentTarget.style.boxShadow='0 4px 12px rgba(124,58,237,0.15)'; e.currentTarget.style.transform='translateY(-1px)' }}
-                onMouseLeave={e => { e.currentTarget.style.borderColor='var(--border)'; e.currentTarget.style.boxShadow='var(--shadow)'; e.currentTarget.style.transform='none' }}
-                onTouchStart={e => e.currentTarget.style.transform='scale(0.96)'}
+                onMouseEnter={e => { e.currentTarget.style.borderColor='var(--accent)'; e.currentTarget.style.background='var(--accent-bg)' }}
+                onMouseLeave={e => { e.currentTarget.style.borderColor='var(--border)'; e.currentTarget.style.background='var(--surface2)' }}
+                onTouchStart={e => e.currentTarget.style.transform='scale(0.94)'}
                 onTouchEnd={e => e.currentTarget.style.transform='none'}
               >
-                <span style={{ fontSize:20, lineHeight:1 }}>{getCatMeta(q.category,'expense').icon}</span>
-                <span style={{ fontSize:12, fontWeight:600, color:'var(--text)', whiteSpace:'nowrap', maxWidth:90, overflow:'hidden', textOverflow:'ellipsis' }}>{q.description}</span>
-                <span style={{ fontSize:12, color:'var(--accent)', fontFamily:'var(--mono)', fontWeight:700 }}>Rs.{Math.round(q.amount).toLocaleString()}</span>
+                <span style={{ fontSize:13 }}>{getCatMeta(q.category,'expense').icon}</span>
+                <span style={{ fontSize:12, fontWeight:500, color:'var(--text)' }}>{q.description}</span>
+                <span style={{ fontSize:11, color:'var(--text3)', fontFamily:'var(--mono)' }}>{Math.round(q.amount).toLocaleString()}</span>
               </button>
             ))}
           </div>
@@ -447,6 +485,57 @@ export default function Dashboard() {
       }
 
       {prefill && <AddModal prefill={prefill} onClose={() => setPrefill(null)} />}
+
+      {/* ── Edit Account Modal ── */}
+      {editingAccount && createPortal(
+        <div onClick={e=>{ if(e.target===e.currentTarget) setEditingAccount(null) }} style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.55)', backdropFilter:'blur(6px)', display:'flex', alignItems:'flex-end', justifyContent:'center', zIndex:9999 }}>
+          <div onClick={e=>e.stopPropagation()} style={{ background:'var(--surface)', width:'100%', maxWidth:520, borderRadius:'var(--r-xl) var(--r-xl) 0 0', padding:'12px 20px 44px', animation:'slideUp 0.28s cubic-bezier(0.32,0.72,0,1) both', maxHeight:'85dvh', overflowY:'auto' }}>
+            <div style={{ display:'flex', justifyContent:'center', paddingBottom:12 }}>
+              <div style={{ width:36, height:4, borderRadius:2, background:'var(--border2)' }} />
+            </div>
+            <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:20 }}>
+              <h2 style={{ fontSize:20, fontWeight:700, color:'var(--text)' }}>Edit Account</h2>
+              <button onClick={() => setEditingAccount(null)} style={{ width:36, height:36, borderRadius:'50%', background:'var(--surface2)', border:'1.5px solid var(--border)', display:'flex', alignItems:'center', justifyContent:'center', cursor:'pointer' }}>
+                <X size={16} color="var(--text2)" />
+              </button>
+            </div>
+
+            <RField label="Account Name">
+              <input type="text" placeholder="e.g. NDB Savings" value={accountForm.name||''} onChange={e=>setAccountForm(f=>({...f,name:e.target.value}))}
+                style={{ width:'100%', padding:'12px 14px', background:'var(--surface2)', border:'1.5px solid var(--border)', borderRadius:'var(--r)', fontSize:15, color:'var(--text)', outline:'none', boxSizing:'border-box' }} />
+            </RField>
+
+            <RField label="Balance (Rs.)">
+              <input type="number" placeholder="0" value={accountForm.balance||''} onChange={e=>setAccountForm(f=>({...f,balance:e.target.value}))}
+                style={{ width:'100%', padding:'12px 14px', background:'var(--surface2)', border:'1.5px solid var(--border)', borderRadius:'var(--r)', fontSize:15, color:'var(--text)', outline:'none', boxSizing:'border-box' }} />
+            </RField>
+
+            {editingAccount.type === 'credit' && <>
+              <RField label="Minimum Payment (Rs.)">
+                <input type="number" placeholder="0" value={accountForm.minPayment||''} onChange={e=>setAccountForm(f=>({...f,minPayment:e.target.value}))}
+                  style={{ width:'100%', padding:'12px 14px', background:'var(--surface2)', border:'1.5px solid var(--border)', borderRadius:'var(--r)', fontSize:15, color:'var(--text)', outline:'none', boxSizing:'border-box' }} />
+              </RField>
+              <RField label="Credit Limit (Rs.)">
+                <input type="number" placeholder="0" value={accountForm.creditLimit||''} onChange={e=>setAccountForm(f=>({...f,creditLimit:e.target.value}))}
+                  style={{ width:'100%', padding:'12px 14px', background:'var(--surface2)', border:'1.5px solid var(--border)', borderRadius:'var(--r)', fontSize:15, color:'var(--text)', outline:'none', boxSizing:'border-box' }} />
+              </RField>
+              <RField label="Payment Due Date">
+                <input type="date" value={accountForm.paymentDueDate||''} onChange={e=>setAccountForm(f=>({...f,paymentDueDate:e.target.value}))}
+                  style={{ width:'100%', padding:'12px 14px', background:'var(--surface2)', border:'1.5px solid var(--border)', borderRadius:'var(--r)', fontSize:15, color:'var(--text)', outline:'none', boxSizing:'border-box' }} />
+              </RField>
+            </>}
+
+            <button onClick={saveAccount} disabled={!accountForm.name || savingAcct} style={{
+              width:'100%', padding:15, borderRadius:'var(--r-lg)', fontSize:15, fontWeight:700,
+              background:'var(--accent)', color:'#fff', border:'none', cursor:'pointer',
+              opacity: !accountForm.name || savingAcct ? 0.4 : 1, marginTop:4, transition:'opacity 0.15s',
+            }}>
+              {savingAcct ? 'Saving…' : 'Save Changes'}
+            </button>
+          </div>
+        </div>,
+        document.body
+      )}
 
       {/* ── Edit Recurring Modal ── */}
       {editingRecurring && createPortal(

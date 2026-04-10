@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { createPortal } from 'react-dom'
-import { Plus, Trash2, X, RefreshCw, Zap, Sun, Moon, Monitor, Tag, ChevronDown, ChevronUp, Pencil } from 'lucide-react'
+import { Plus, Trash2, X, RefreshCw, Zap, Sun, Moon, Monitor, Tag, ChevronDown, ChevronUp, Pencil, Download, Upload } from 'lucide-react'
 import { useApp } from '../context/AppContext'
 import { fmt } from '../utils/helpers'
 import { addRecurring, updateRecurring, deleteRecurring, addCustomCategory, deleteCustomCategory,
@@ -8,6 +8,8 @@ import { addRecurring, updateRecurring, deleteRecurring, addCustomCategory, dele
          addCustomBillPreset, deleteCustomBillPreset, subscribeBillPresets,
          addCustomLoanType, deleteCustomLoanType, subscribeLoanTypes,
          BUILTIN_BILL_PRESETS, BUILTIN_LOAN_TYPES } from '../services/db'
+import { collection, getDocs, doc, setDoc, deleteDoc, writeBatch } from 'firebase/firestore'
+import { db, auth } from '../services/firebase'
 
 const BLANK_RECURRING = { description:'', amount:'', category:'Bills', cycle:'month' }
 const EMOJI_POOL = ['🏷️','🎯','⚡','🔑','🌟','🎪','🎸','🍕','🚀','🌈','💎','🎭','🏆','🌺','🔥','💡','🎁','🌙','🎨','🛡️']
@@ -42,11 +44,181 @@ export default function Settings() {
   const [savingLC, setSavingLC] = useState(false)
   const [loanCatExpanded, setLoanCatExpanded] = useState(false)
 
+  // ── Backup / Restore ──────────────────────────────────────────────────────
+  const [backingUp, setBackingUp] = useState(false)
+  const [restoring, setRestoring] = useState(false)
+  const [backupMsg, setBackupMsg] = useState('')
+
+  const COLS = ['accounts','transactions','bills','loans','loanPayments','recurring',
+                'quickExpenses','customExpenseCategories','customIncomeCategories',
+                'customBillPresets','customLoanTypes']
+
+  const downloadBackup = async () => {
+    setBackingUp(true)
+    setBackupMsg('')
+    try {
+      const uid    = auth.currentUser.uid
+      const backup = { exportedAt: new Date().toISOString(), version: 1 }
+      for (const col of COLS) {
+        const snap  = await getDocs(collection(db, 'users', uid, col))
+        backup[col] = snap.docs.map(d => d.data())
+      }
+      const blob = new Blob([JSON.stringify(backup, null, 2)], { type: 'application/json' })
+      const url  = URL.createObjectURL(blob)
+      const a    = document.createElement('a')
+      a.href     = url
+      a.download = `spendly-backup-${new Date().toISOString().split('T')[0]}.json`
+      a.click()
+      URL.revokeObjectURL(url)
+      setBackupMsg('✅ Backup downloaded!')
+    } catch(e) {
+      console.error(e)
+      setBackupMsg('❌ Backup failed. Please try again.')
+    }
+    setBackingUp(false)
+  }
+
+  const restoreBackup = async (e) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    if (!confirm('⚠️ This will REPLACE all your current data with the backup. Continue?')) {
+      e.target.value = ''
+      return
+    }
+    setRestoring(true)
+    setBackupMsg('')
+    try {
+      const text   = await file.text()
+      const backup = JSON.parse(text)
+      if (!backup.version || !backup.accounts) throw new Error('Invalid file')
+      const uid    = auth.currentUser.uid
+      for (const col of COLS) {
+        if (!backup[col]) continue
+        // Delete existing docs
+        const snap = await getDocs(collection(db, 'users', uid, col))
+        const delBatch = writeBatch(db)
+        snap.docs.forEach(d => delBatch.delete(d.ref))
+        await delBatch.commit()
+        // Write backup docs in chunks of 400
+        const rows = backup[col]
+        for (let i = 0; i < rows.length; i += 400) {
+          const batch = writeBatch(db)
+          rows.slice(i, i + 400).forEach(row => {
+            const id  = row.id || row.name || Math.random().toString(36).slice(2)
+            const ref = doc(db, 'users', uid, col, id)
+            batch.set(ref, row)
+          })
+          await batch.commit()
+        }
+      }
+      setBackupMsg('✅ Restore complete! Refreshing…')
+      setTimeout(() => window.location.reload(), 1500)
+    } catch(e) {
+      console.error(e)
+      setBackupMsg('❌ Restore failed. Make sure you selected a valid Spendly backup.')
+    }
+    setRestoring(false)
+    e.target.value = ''
+  }
+
   useEffect(() => {
     const unsub1 = subscribeBillPresets(setBillPresets)
     const unsub2 = subscribeLoanTypes(setLoanTypes)
     return () => { unsub1(); unsub2() }
   }, [])
+
+  const [backingUp, setBackingUp]   = useState(false)
+  const [restoring, setRestoring]   = useState(false)
+  const [backupMsg, setBackupMsg]   = useState('')
+
+  const COLLECTIONS = ['accounts','transactions','bills','loans','loanPayments','recurring','quickExpenses','customExpenseCategories','customIncomeCategories','customBillPresets','customLoanTypes']
+
+  const downloadBackup = async () => {
+    setBackingUp(true)
+    setBackupMsg('')
+    try {
+      const uid = auth.currentUser.uid
+      const data = { exportedAt: new Date().toISOString(), version: 1 }
+      for (const col of COLLECTIONS) {
+        const snap = await getDocs(collection(db, 'users', uid, col))
+        data[col] = snap.docs.map(d => d.data())
+      }
+      const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' })
+      const url  = URL.createObjectURL(blob)
+      const a    = document.createElement('a')
+      a.href     = url
+      a.download = `spendly-backup-${new Date().toISOString().split('T')[0]}.json`
+      a.click()
+      URL.revokeObjectURL(url)
+      setBackupMsg('✅ Backup downloaded!')
+    } catch(e) {
+      console.error(e)
+      setBackupMsg('❌ Backup failed. Try again.')
+    }
+    setBackingUp(false)
+    setTimeout(() => setBackupMsg(''), 4000)
+  }
+
+  const restoreBackup = async (e) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    if (!confirm('This will OVERWRITE all your current data with the backup. Are you sure?')) {
+      e.target.value = ''
+      return
+    }
+    setRestoring(true)
+    setBackupMsg('')
+    try {
+      const text = await file.text()
+      const data = JSON.parse(text)
+      if (!data.version) throw new Error('Invalid backup file')
+      const uid = auth.currentUser.uid
+      const { setDoc, doc, deleteDoc, getDocs: gd, collection: col } = await import('firebase/firestore')
+      for (const colName of COLLECTIONS) {
+        if (!data[colName]) continue
+        // Delete existing docs
+        const existing = await getDocs(collection(db, 'users', uid, colName))
+        for (const d of existing.docs) await deleteDoc(d.ref)
+        // Write backup docs
+        for (const item of data[colName]) {
+          if (item.id) await setDoc(doc(db, 'users', uid, colName, item.id), item)
+        }
+      }
+      setBackupMsg('✅ Data restored! Refresh the page.')
+    } catch(e) {
+      console.error(e)
+      setBackupMsg('❌ Restore failed. Make sure the file is a valid Spendly backup.')
+    }
+    setRestoring(false)
+    e.target.value = ''
+    setTimeout(() => setBackupMsg(''), 6000)
+  }
+
+  const [backingUp, setBackingUp]   = useState(false)
+  const [backupDone, setBackupDone] = useState(false)
+
+  const downloadBackup = async () => {
+    setBackingUp(true)
+    try {
+      const uid = auth.currentUser.uid
+      const cols = ['accounts','transactions','bills','loans','loanPayments','recurring','quickExpenses','customExpenseCategories','customIncomeCategories','customBillPresets','customLoanTypes']
+      const backup = { exportedAt: new Date().toISOString(), uid, collections: {} }
+      await Promise.all(cols.map(async (col) => {
+        const snap = await getDocs(collection(db, 'users', uid, col))
+        backup.collections[col] = snap.docs.map(d => d.data())
+      }))
+      const blob = new Blob([JSON.stringify(backup, null, 2)], { type: 'application/json' })
+      const url  = URL.createObjectURL(blob)
+      const a    = document.createElement('a')
+      a.href     = url
+      a.download = `spendly-backup-${new Date().toISOString().split('T')[0]}.json`
+      a.click()
+      URL.revokeObjectURL(url)
+      setBackupDone(true)
+      setTimeout(() => setBackupDone(false), 3000)
+    } catch(e) { console.error(e) }
+    setBackingUp(false)
+  }
 
   const cycles = ['day','week','month','year']
 
@@ -263,6 +435,115 @@ export default function Settings() {
         {recurring.length === 0 && <EmptyCard text="No recurring expenses set up" />}
       </div>
 
+      {/* ── Data Backup ── */}
+      <div style={{ marginBottom: 8 }}>
+        <SectionHead icon={<Download size={15} color="#0284c7" />} iconBg="#0284c715" title="Data Backup" />
+      </div>
+      <p style={{ fontSize:13, color:'var(--text2)', marginBottom:14 }}>
+        Export all your data as a JSON file. Keep it somewhere safe — Google Drive, iCloud, email. You can restore it anytime.
+      </p>
+      <div style={{ background:'var(--surface)', border:'1px solid var(--border)', borderRadius:'var(--r-lg)', overflow:'hidden', marginBottom:8, boxShadow:'var(--shadow)' }}>
+
+        {/* Download */}
+        <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', padding:'14px 16px', borderBottom:'1px solid var(--border)' }}>
+          <div>
+            <p style={{ fontSize:14, fontWeight:600, color:'var(--text)' }}>Export backup</p>
+            <p style={{ fontSize:12, color:'var(--text2)', marginTop:2 }}>Download all data as a .json file</p>
+          </div>
+          <button
+            onClick={downloadBackup}
+            disabled={backingUp}
+            style={{
+              display:'flex', alignItems:'center', gap:6,
+              padding:'8px 16px', borderRadius:999,
+              background:'#0284c7', color:'#fff',
+              fontSize:13, fontWeight:700, border:'none', cursor:'pointer',
+              opacity: backingUp ? 0.6 : 1, transition:'all 0.15s', flexShrink:0,
+            }}
+          >
+            <Download size={14} />
+            {backingUp ? 'Exporting…' : 'Export'}
+          </button>
+        </div>
+
+        {/* Restore */}
+        <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', padding:'14px 16px' }}>
+          <div>
+            <p style={{ fontSize:14, fontWeight:600, color:'var(--text)' }}>Restore backup</p>
+            <p style={{ fontSize:12, color:'var(--text2)', marginTop:2 }}>Overwrites current data with backup file</p>
+          </div>
+          <label style={{
+            display:'flex', alignItems:'center', gap:6,
+            padding:'8px 16px', borderRadius:999,
+            background:'var(--surface2)', color:'var(--text)',
+            border:'1.5px solid var(--border)',
+            fontSize:13, fontWeight:700, cursor: restoring ? 'wait' : 'pointer',
+            opacity: restoring ? 0.6 : 1, transition:'all 0.15s', flexShrink:0,
+          }}>
+            <Upload size={14} />
+            {restoring ? 'Restoring…' : 'Restore'}
+            <input type="file" accept=".json" onChange={restoreBackup} style={{ display:'none' }} disabled={restoring} />
+          </label>
+        </div>
+      </div>
+
+      {/* Feedback message */}
+      {backupMsg && (
+        <div style={{
+          padding:'10px 14px', borderRadius:'var(--r)',
+          background: backupMsg.startsWith('✅') ? 'var(--success-bg,#dcfce7)' : 'var(--danger-bg)',
+          border: `1px solid ${backupMsg.startsWith('✅') ? '#86efac' : 'var(--danger)'}`,
+          fontSize:13, fontWeight:600,
+          color: backupMsg.startsWith('✅') ? '#166534' : 'var(--danger-fg)',
+          marginBottom:16,
+        }}>
+          {backupMsg}
+        </div>
+      )}
+
+      {/* ── Data Backup ── */}
+      <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:10 }}>
+        <SectionHead icon={<Download size={15} color="#0284c7" />} iconBg="#0284c715" title="Data Backup" />
+      </div>
+      <p style={{ fontSize:13, color:'var(--text2)', marginBottom:14 }}>
+        Download all your data as a JSON file. Keep it safe — it can be used to restore your data if needed.
+      </p>
+      <div style={{ background:'var(--surface)', border:'1px solid var(--border)', borderRadius:'var(--r-lg)', padding:'16px', marginBottom:28, boxShadow:'var(--shadow)' }}>
+        <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', gap:12 }}>
+          <div>
+            <p style={{ fontSize:14, fontWeight:600, color:'var(--text)', marginBottom:3 }}>Export all data</p>
+            <p style={{ fontSize:12, color:'var(--text2)' }}>Accounts · Transactions · Bills · Loans · Recurring</p>
+          </div>
+          <button
+            onClick={downloadBackup}
+            disabled={backingUp}
+            style={{
+              flexShrink:0,
+              display:'flex', alignItems:'center', gap:7,
+              padding:'10px 18px', borderRadius:'var(--r-lg)',
+              background: backupDone ? '#10b981' : 'var(--accent)',
+              color:'#fff', fontSize:13, fontWeight:700,
+              border:'none', cursor: backingUp ? 'wait' : 'pointer',
+              opacity: backingUp ? 0.7 : 1,
+              transition:'all 0.2s',
+              boxShadow:'0 2px 8px rgba(124,58,237,0.25)',
+            }}
+          >
+            {backingUp
+              ? <><span style={{ width:14, height:14, border:'2px solid rgba(255,255,255,0.4)', borderTopColor:'#fff', borderRadius:'50%', display:'inline-block', animation:'spin 0.7s linear infinite' }} /> Exporting…</>
+              : backupDone
+              ? <>✓ Downloaded!</>
+              : <><Download size={14}/> Download</>
+            }
+          </button>
+        </div>
+        <div style={{ marginTop:14, padding:'10px 12px', background:'var(--surface2)', borderRadius:'var(--r)', border:'1px solid var(--border)' }}>
+          <p style={{ fontSize:11, color:'var(--text3)', lineHeight:1.6 }}>
+            💡 <strong style={{ color:'var(--text2)' }}>Tip:</strong> Back up monthly or before making big changes. The file includes all collections from your account and can be imported manually into Firestore if ever needed.
+          </p>
+        </div>
+      </div>
+
       {/* ── Frequent ── */}
       <SectionHead icon={<Zap size={15} color="var(--warn)" />} iconBg="var(--warn-bg)" title="Frequent Expenses" />
       <p style={{ fontSize:13, color:'var(--text2)', marginBottom:14 }}>Auto-tracked. Appear as quick-add on home screen.</p>
@@ -277,6 +558,63 @@ export default function Settings() {
           </div>
         ))}
         {quickExpenses.length === 0 && <EmptyCard text="Quick-add buttons appear after your first few transactions" />}
+      </div>
+
+      {/* ── Data Backup ── */}
+      <SectionHead icon={<Download size={15} color="#0284c7" />} iconBg="#0284c715" title="Data Backup" />
+      <p style={{ fontSize:13, color:'var(--text2)', marginBottom:14 }}>
+        Download a full backup of all your data, or restore from a previous backup.
+      </p>
+      <div style={{ background:'var(--surface)', border:'1px solid var(--border)', borderRadius:'var(--r-lg)', overflow:'hidden', marginBottom:32, boxShadow:'var(--shadow)' }}>
+
+        {/* Export */}
+        <div style={{ padding:'16px', borderBottom:'1px solid var(--border)', display:'flex', alignItems:'center', justifyContent:'space-between', gap:12 }}>
+          <div>
+            <p style={{ fontSize:14, fontWeight:600, color:'var(--text)' }}>Export backup</p>
+            <p style={{ fontSize:12, color:'var(--text2)', marginTop:2 }}>Downloads a .json file with all your data</p>
+          </div>
+          <button
+            onClick={downloadBackup}
+            disabled={backingUp}
+            style={{
+              display:'flex', alignItems:'center', gap:6,
+              padding:'9px 16px', borderRadius:'var(--r)',
+              background:'#0284c7', color:'#fff',
+              fontSize:13, fontWeight:700, border:'none', cursor:'pointer',
+              opacity: backingUp ? 0.6 : 1, transition:'opacity 0.15s', flexShrink:0,
+            }}
+          >
+            <Download size={14} />
+            {backingUp ? 'Exporting…' : 'Export'}
+          </button>
+        </div>
+
+        {/* Import */}
+        <div style={{ padding:'16px', display:'flex', alignItems:'center', justifyContent:'space-between', gap:12 }}>
+          <div>
+            <p style={{ fontSize:14, fontWeight:600, color:'var(--text)' }}>Restore backup</p>
+            <p style={{ fontSize:12, color:'var(--text2)', marginTop:2 }}>Replace all data with a .json backup file</p>
+          </div>
+          <label style={{
+            display:'flex', alignItems:'center', gap:6,
+            padding:'9px 16px', borderRadius:'var(--r)',
+            background:'var(--surface2)', border:'1.5px solid var(--border)',
+            fontSize:13, fontWeight:700, color:'var(--text)',
+            cursor: restoring ? 'wait' : 'pointer', flexShrink:0,
+            opacity: restoring ? 0.6 : 1,
+          }}>
+            <Upload size={14} />
+            {restoring ? 'Restoring…' : 'Restore'}
+            <input type="file" accept=".json" onChange={restoreBackup} style={{ display:'none' }} disabled={restoring} />
+          </label>
+        </div>
+
+        {/* Status message */}
+        {backupMsg && (
+          <div style={{ padding:'10px 16px', borderTop:'1px solid var(--border)', background: backupMsg.startsWith('✅') ? 'var(--success-bg, #f0fdf4)' : 'var(--danger-bg)' }}>
+            <p style={{ fontSize:13, fontWeight:600, color: backupMsg.startsWith('✅') ? '#16a34a' : 'var(--danger)' }}>{backupMsg}</p>
+          </div>
+        )}
       </div>
 
       {/* ── Add Custom Category Modal ── */}
