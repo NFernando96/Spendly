@@ -55,6 +55,8 @@ export default function Dashboard() {
   }
 
   const [prefill, setPrefill] = useState(null)
+
+  const saveRecurring = async () => {
     if (!recurringForm.description || !recurringForm.amount || !editingRecurring) return
     setSavingR(true)
     try {
