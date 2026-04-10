@@ -159,8 +159,14 @@ a { text-decoration: none; color: inherit; }
 @media (max-width: 767px) {
   .app-shell { display: flex; flex-direction: column; max-width: var(--max-w); margin: 0 auto; min-height: 100dvh; }
   .sidebar { display: none !important; }
-  .main-content { flex: 1; padding-bottom: calc(var(--nav-h) + 12px); }
+  .main-content { flex: 1; padding-top: 52px; padding-bottom: calc(var(--nav-h) + 12px); }
   .page-inner { padding: 0; }
+}
+
+/* Mobile topbar — hidden on desktop */
+.mobile-topbar { display: flex; }
+@media (min-width: 768px) {
+  .mobile-topbar { display: none !important; }
 }
 
 /* Animations */

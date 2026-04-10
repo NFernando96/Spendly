@@ -1,6 +1,6 @@
 import { useState } from 'react'
-import { Outlet, NavLink, useLocation } from 'react-router-dom'
-import { LayoutDashboard, List, BarChart2, Wallet, Settings, Plus, TrendingUp, Receipt, Landmark, LogOut } from 'lucide-react'
+import { Outlet, NavLink } from 'react-router-dom'
+import { LayoutDashboard, List, BarChart2, Wallet, Settings, Plus, TrendingUp, Receipt, Landmark, LogOut, X } from 'lucide-react'
 import AddModal from './AddModal'
 import { useApp } from '../context/AppContext'
 import { useAuth } from '../context/AuthContext'
@@ -16,7 +16,8 @@ const NAV = [
 ]
 
 export default function Layout() {
-  const [showAdd, setShowAdd] = useState(false)
+  const [showAdd, setShowAdd]           = useState(false)
+  const [showUserMenu, setShowUserMenu] = useState(false)
   const { loading } = useApp()
   const { user, logOut } = useAuth()
 
@@ -63,21 +64,21 @@ export default function Layout() {
           ))}
         </nav>
 
-        {/* User info + logout */}
-        <div style={{ marginBottom: 12, padding: '10px 12px', background: 'var(--surface2)', borderRadius: 'var(--r)', display: 'flex', alignItems: 'center', gap: 10 }}>
+        {/* User info + logout — desktop */}
+        <div style={{ marginBottom:12, padding:'10px 12px', background:'var(--surface2)', borderRadius:'var(--r)', display:'flex', alignItems:'center', gap:10 }}>
           {user?.photoURL
-            ? <img src={user.photoURL} alt="avatar" style={{ width: 32, height: 32, borderRadius: '50%', flexShrink: 0, objectFit: 'cover' }} />
-            : <div style={{ width: 32, height: 32, borderRadius: '50%', background: 'var(--accent)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 13, fontWeight: 700, color: '#fff', flexShrink: 0 }}>{initials}</div>
+            ? <img src={user.photoURL} alt="avatar" style={{ width:32, height:32, borderRadius:'50%', flexShrink:0, objectFit:'cover' }} />
+            : <div style={{ width:32, height:32, borderRadius:'50%', background:'var(--accent)', display:'flex', alignItems:'center', justifyContent:'center', fontSize:13, fontWeight:700, color:'#fff', flexShrink:0 }}>{initials}</div>
           }
-          <div style={{ flex: 1, minWidth: 0 }}>
-            <p style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+          <div style={{ flex:1, minWidth:0 }}>
+            <p style={{ fontSize:13, fontWeight:600, color:'var(--text)', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>
               {user?.displayName || 'User'}
             </p>
-            <p style={{ fontSize: 11, color: 'var(--text3)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+            <p style={{ fontSize:11, color:'var(--text3)', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>
               {user?.email}
             </p>
           </div>
-          <button onClick={logOut} title="Sign out" style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 4, display: 'flex', opacity: 0.5, transition: 'opacity 0.15s' }}
+          <button onClick={logOut} title="Sign out" style={{ background:'none', border:'none', cursor:'pointer', padding:4, display:'flex', opacity:0.5, transition:'opacity 0.15s' }}
             onMouseEnter={e => e.currentTarget.style.opacity = '1'}
             onMouseLeave={e => e.currentTarget.style.opacity = '0.5'}
           >
@@ -110,7 +111,80 @@ export default function Layout() {
         </div>
       </main>
 
-      {/* ── Mobile Bottom Nav — 5 items, no FAB slot ── */}
+      {/* ── Mobile Top Bar (avatar + sign out) ── */}
+      <div className="mobile-topbar" style={{
+        position:'fixed', top:0, left:'50%', transform:'translateX(-50%)',
+        width:'100%', maxWidth:'var(--max-w)',
+        height:52,
+        background:'var(--surface)',
+        borderBottom:'1px solid var(--border)',
+        display:'flex', alignItems:'center', justifyContent:'space-between',
+        padding:'0 16px',
+        zIndex:201,
+      }}>
+        {/* Logo */}
+        <div style={{ display:'flex', alignItems:'center', gap:8 }}>
+          <div style={{ width:28, height:28, borderRadius:8, background:'var(--accent)', display:'flex', alignItems:'center', justifyContent:'center' }}>
+            <TrendingUp size={14} color="#fff" strokeWidth={2.5} />
+          </div>
+          <span style={{ fontFamily:'var(--font-head)', fontWeight:800, fontSize:15, letterSpacing:'-0.3px', color:'var(--text)' }}>Spendly</span>
+        </div>
+
+        {/* Avatar — tap to show sign out */}
+        <div style={{ position:'relative' }}>
+          <button
+            onClick={() => setShowUserMenu(v => !v)}
+            style={{ background:'none', border:'none', cursor:'pointer', padding:0, display:'flex', alignItems:'center', gap:8 }}
+          >
+            {user?.photoURL
+              ? <img src={user.photoURL} alt="avatar" style={{ width:34, height:34, borderRadius:'50%', objectFit:'cover', border:'2px solid var(--border2)' }} />
+              : <div style={{ width:34, height:34, borderRadius:'50%', background:'var(--accent)', display:'flex', alignItems:'center', justifyContent:'center', fontSize:14, fontWeight:700, color:'#fff' }}>{initials}</div>
+            }
+          </button>
+
+          {/* Dropdown */}
+          {showUserMenu && (
+            <>
+              {/* backdrop */}
+              <div onClick={() => setShowUserMenu(false)} style={{ position:'fixed', inset:0, zIndex:299 }} />
+              <div style={{
+                position:'absolute', right:0, top:'calc(100% + 8px)',
+                background:'var(--surface)', border:'1px solid var(--border)',
+                borderRadius:'var(--r-lg)', boxShadow:'var(--shadow-md)',
+                minWidth:200, zIndex:300, overflow:'hidden',
+              }}>
+                {/* User info */}
+                <div style={{ padding:'12px 14px', borderBottom:'1px solid var(--border)' }}>
+                  <p style={{ fontSize:13, fontWeight:700, color:'var(--text)', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>
+                    {user?.displayName || 'User'}
+                  </p>
+                  <p style={{ fontSize:11, color:'var(--text3)', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap', marginTop:2 }}>
+                    {user?.email}
+                  </p>
+                </div>
+                {/* Sign out */}
+                <button
+                  onClick={() => { setShowUserMenu(false); logOut() }}
+                  style={{
+                    width:'100%', padding:'12px 14px',
+                    display:'flex', alignItems:'center', gap:10,
+                    background:'none', border:'none', cursor:'pointer',
+                    fontSize:13, fontWeight:600, color:'var(--danger)',
+                    textAlign:'left',
+                  }}
+                  onMouseEnter={e => e.currentTarget.style.background = 'var(--danger-bg)'}
+                  onMouseLeave={e => e.currentTarget.style.background = 'none'}
+                >
+                  <LogOut size={14} />
+                  Sign out
+                </button>
+              </div>
+            </>
+          )}
+        </div>
+      </div>
+
+      {/* ── Mobile Bottom Nav ── */}
       <nav className="bottom-nav" style={{
         position:'fixed', bottom:0, left:'50%', transform:'translateX(-50%)',
         width:'100%', maxWidth:'var(--max-w)',

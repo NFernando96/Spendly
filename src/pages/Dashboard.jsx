@@ -359,24 +359,36 @@ export default function Dashboard() {
       {quickExpenses.length > 0 && (
         <div style={{ marginBottom:20 }}>
           <SectionTitle>Quick Add</SectionTitle>
-          <div style={{ display:'flex', flexWrap:'wrap', gap:7 }}>
-            {quickExpenses.slice(0,8).map(q => (
+          {/* Horizontal scroll strip — no wrapping, swipe on mobile */}
+          <div style={{
+            display:'flex', gap:8,
+            overflowX:'auto', overflowY:'visible',
+            scrollbarWidth:'none',
+            paddingBottom:6, paddingTop:2,
+            marginLeft:-16, marginRight:-16,
+            paddingLeft:16, paddingRight:16,
+          }}>
+            {quickExpenses.slice(0,12).map(q => (
               <button key={q.id}
                 onClick={() => setPrefill({ type:'expense', description:q.description, amount:q.amount, category:q.category, accountId:q.accountId })}
                 style={{
-                  padding:'7px 13px', borderRadius:999,
-                  background:'var(--surface2)', border:'1.5px solid var(--border)',
-                  fontSize:13, display:'flex', alignItems:'center', gap:5,
-                  color:'var(--text)',
-                  fontWeight:500,
-                  boxShadow:'var(--shadow)', transition:'all 0.15s',
+                  flexShrink:0,
+                  padding:'9px 14px', borderRadius:'var(--r-lg)',
+                  background:'var(--surface)',
+                  border:'1.5px solid var(--border)',
+                  boxShadow:'var(--shadow)',
+                  display:'flex', flexDirection:'column', alignItems:'flex-start', gap:4,
+                  transition:'all 0.15s', cursor:'pointer',
+                  minWidth:100,
                 }}
-                onMouseEnter={e => { e.currentTarget.style.borderColor='var(--accent)'; e.currentTarget.style.transform='translateY(-1px)' }}
-                onMouseLeave={e => { e.currentTarget.style.borderColor='var(--border)'; e.currentTarget.style.transform='none' }}
+                onMouseEnter={e => { e.currentTarget.style.borderColor='var(--accent)'; e.currentTarget.style.boxShadow='0 4px 12px rgba(124,58,237,0.15)'; e.currentTarget.style.transform='translateY(-1px)' }}
+                onMouseLeave={e => { e.currentTarget.style.borderColor='var(--border)'; e.currentTarget.style.boxShadow='var(--shadow)'; e.currentTarget.style.transform='none' }}
+                onTouchStart={e => e.currentTarget.style.transform='scale(0.96)'}
+                onTouchEnd={e => e.currentTarget.style.transform='none'}
               >
-                <span>{getCatMeta(q.category,'expense').icon}</span>
-                <span>{q.description}</span>
-                <span style={{ color:'var(--text2)', fontSize:12, fontFamily:'var(--mono)' }}>Rs.{Math.round(q.amount).toLocaleString()}</span>
+                <span style={{ fontSize:20, lineHeight:1 }}>{getCatMeta(q.category,'expense').icon}</span>
+                <span style={{ fontSize:12, fontWeight:600, color:'var(--text)', whiteSpace:'nowrap', maxWidth:90, overflow:'hidden', textOverflow:'ellipsis' }}>{q.description}</span>
+                <span style={{ fontSize:12, color:'var(--accent)', fontFamily:'var(--mono)', fontWeight:700 }}>Rs.{Math.round(q.amount).toLocaleString()}</span>
               </button>
             ))}
           </div>
