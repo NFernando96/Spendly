@@ -37,12 +37,14 @@ export default function Layout() {
       {/* ── Desktop Sidebar ── */}
       <aside className="sidebar">
         <div style={{ marginBottom:32, paddingLeft:8 }}>
-          <div style={{ display:'flex', alignItems:'center', gap:10, marginBottom:4 }}>
-            <div style={{ width:32, height:32, borderRadius:10, background:'var(--accent)', display:'flex', alignItems:'center', justifyContent:'center' }}>
-              <TrendingUp size={16} color="#fff" strokeWidth={2.5} />
+          <NavLink to="/dashboard" style={{ textDecoration:'none' }}>
+            <div style={{ display:'flex', alignItems:'center', gap:10, marginBottom:4 }}>
+              <div style={{ width:32, height:32, borderRadius:10, background:'var(--accent)', display:'flex', alignItems:'center', justifyContent:'center' }}>
+                <TrendingUp size={16} color="#fff" strokeWidth={2.5} />
+              </div>
+              <span style={{ fontFamily:'var(--font-head)', fontWeight:800, fontSize:17, letterSpacing:'-0.3px' }}>Spendly</span>
             </div>
-            <span style={{ fontFamily:'var(--font-head)', fontWeight:800, fontSize:17, letterSpacing:'-0.3px' }}>Spendly</span>
-          </div>
+          </NavLink>
           <p style={{ fontSize:11, color:'var(--text3)', paddingLeft:42 }}>Personal finance</p>
         </div>
 
@@ -123,12 +125,12 @@ export default function Layout() {
         zIndex:201,
       }}>
         {/* Logo */}
-        <div style={{ display:'flex', alignItems:'center', gap:8 }}>
+        <NavLink to="/dashboard" style={{ textDecoration:'none', display:'flex', alignItems:'center', gap:8 }}>
           <div style={{ width:28, height:28, borderRadius:8, background:'var(--accent)', display:'flex', alignItems:'center', justifyContent:'center' }}>
             <TrendingUp size={14} color="#fff" strokeWidth={2.5} />
           </div>
           <span style={{ fontFamily:'var(--font-head)', fontWeight:800, fontSize:15, letterSpacing:'-0.3px', color:'var(--text)' }}>Spendly</span>
-        </div>
+        </NavLink>
 
         {/* Avatar — tap to show sign out */}
         <div style={{ position:'relative' }}>
