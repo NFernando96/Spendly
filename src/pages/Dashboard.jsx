@@ -11,7 +11,7 @@ export default function Dashboard() {
   const {
     accounts, transactions, quickExpenses, recurring, bills, loans, loanPayments,
     totalBalance, todayExpenses, monthExpenses, monthStr,
-    balanceHidden, toggleBalance, expenseCategories,
+    balanceHidden, toggleBalance, expenseCategories, recurringCategories,
   } = useApp()
 
   const [editingAccount, setEditingAccount] = useState(null)
@@ -458,10 +458,12 @@ export default function Dashboard() {
         <div style={{ marginBottom:20 }}>
           <SectionTitle>Recurring</SectionTitle>
           <div style={{ display:'flex', flexDirection:'column', gap:7 }}>
-            {recurring.map(r => (
+            {recurring.map(r => {
+              const rCat = recurringCategories.find(c => c.name === r.category) || getCatMeta(r.category)
+              return (
               <div key={r.id} style={{ display:'flex', alignItems:'center', gap:12, background:'var(--surface)', border:'1px solid var(--border)', borderRadius:'var(--r)', padding:'11px 13px' }}>
-                <div style={{ width:36, height:36, borderRadius:10, background:getCatMeta(r.category).color+'20', display:'flex', alignItems:'center', justifyContent:'center', fontSize:16 }}>
-                  {getCatMeta(r.category).icon}
+                <div style={{ width:36, height:36, borderRadius:10, background:rCat.color+'20', display:'flex', alignItems:'center', justifyContent:'center', fontSize:16 }}>
+                  {rCat.icon}
                 </div>
                 <div style={{ flex:1 }}>
                   <p style={{ fontSize:13, fontWeight:600, color:'var(--text)' }}>{r.description}</p>
@@ -482,7 +484,8 @@ export default function Dashboard() {
                   <Trash2 size={13} color="var(--danger)" />
                 </button>
               </div>
-            ))}
+              )
+            })}
           </div>
         </div>
       )}

@@ -324,7 +324,7 @@ export default function Settings() {
 
       <div style={{ display:'flex', flexDirection:'column', gap:8, marginBottom:28 }}>
         {recurring.map(r => {
-          const cat = expenseCategories.find(c=>c.name===r.category)
+          const cat = recurringCategories.find(c=>c.name===r.category) || expenseCategories.find(c=>c.name===r.category)
           return (
             <div key={r.id} style={{ display:'flex', alignItems:'center', gap:12, background:'var(--surface)', border:'1px solid var(--border)', borderRadius:'var(--r-lg)', padding:'12px 14px', boxShadow:'var(--shadow)' }}>
               <div style={{ width:40, height:40, borderRadius:12, background:(cat?.color||'#6b7280')+'18', display:'flex', alignItems:'center', justifyContent:'center', fontSize:20 }}>
