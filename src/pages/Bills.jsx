@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom'
 import { Plus, Trash2, Pencil, X, Eye, EyeOff, AlertTriangle, Clock, CheckCircle2, Calendar, ChevronDown } from 'lucide-react'
 import { useApp } from '../context/AppContext'
 import { fmt } from '../utils/helpers'
-import { addBill, updateBill, deleteBill, getBillPresets, getBillPreset } from '../services/db'
+import { addBill, updateBill, deleteBill, getBillPresets, getBillPreset, subscribeBillPresets } from '../services/db'
 
 const blank = { name: '', icon: '📋', color: '#6b7280', amount: '', dueDay: '', cycle: 'monthly', notes: '', customName: '' }
 
@@ -104,6 +104,7 @@ function DayPicker({ value, onChange, placeholder = 'Select due day' }) {
 
 export default function Bills() {
   const { bills } = useApp()
+  const [billPresets, setBillPresets] = useState(getBillPresets())
   const [show,   setShow]   = useState(false)
   const [editId, setEditId] = useState(null)
   const [form,   setForm]   = useState(blank)
@@ -113,6 +114,11 @@ export default function Bills() {
   const [amountHidden, setAmountHidden] = useState(() => {
     try { const s = localStorage.getItem('billsAmountHidden'); return s === null ? false : s === 'true' } catch { return false }
   })
+
+  useEffect(() => {
+    const unsub = subscribeBillPresets(setBillPresets)
+    return unsub
+  }, [])
   const toggleAmount = () => setAmountHidden(v => {
     const next = !v
     try { localStorage.setItem('billsAmountHidden', String(next)) } catch {}
@@ -123,7 +129,7 @@ export default function Bills() {
   const openAdd = () => { setEditId(null); setForm(blank); setUsePreset(true); setShow(true) }
   const openEdit = (b) => {
     setEditId(b.id)
-    const isPreset = getBillPresets().some(p => p.name === b.name)
+    const isPreset = billPresets.some(p => p.name === b.name)
     setUsePreset(isPreset)
     setForm({
       name: b.name, icon: b.icon, color: b.color,
@@ -243,7 +249,7 @@ export default function Bills() {
             {/* Preset picker */}
             <F label="Bill Type">
               <div style={{ display:'grid', gridTemplateColumns:'repeat(3,1fr)', gap:7, marginBottom: usePreset ? 0 : 12 }}>
-                {getBillPresets().map(p => (
+                {billPresets.map(p => (
                   <button key={p.name} onClick={() => { setUsePreset(true); selectPreset(p) }}
                     style={{ padding:'10px 6px', borderRadius:'var(--r)', display:'flex', flexDirection:'column', alignItems:'center', gap:4, fontSize:12, fontWeight:600, background: (usePreset && form.name===p.name) ? p.color+'18' : 'var(--surface2)', border:`1.5px solid ${(usePreset && form.name===p.name) ? p.color+'80' : 'var(--border)'}`, color:(usePreset && form.name===p.name) ? p.color : 'var(--text2)', transition:'all 0.15s', cursor:'pointer' }}
                   >
