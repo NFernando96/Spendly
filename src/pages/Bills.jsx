@@ -239,7 +239,7 @@ export default function Bills() {
         icon: form.icon,
         color: form.color,
         amount: parseFloat(form.amount) || 0,
-        dueDay: form.dueDay.includes("-") ? form.dueDay : (parseInt(form.dueDay) || 1),
+        dueDay: String(form.dueDay).includes("-") ? form.dueDay : (parseInt(form.dueDay) || 1),
         cycle: form.cycle,
         notes: form.notes.trim(),
       }

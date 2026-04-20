@@ -216,24 +216,42 @@ export default function Dashboard() {
       {/* ── Bill due warnings ── */}
       {(() => {
         const todayD = new Date()
+        todayD.setHours(0, 0, 0, 0)
         const todayDay = todayD.getDate()
         const daysInMonth = new Date(todayD.getFullYear(), todayD.getMonth() + 1, 0).getDate()
-        const urgentBills = bills.filter(b => {
-          let diff = b.dueDay - todayDay
-          if (diff < -5) diff = (daysInMonth - todayDay) + b.dueDay
-          return diff <= 5
-        }).map(b => {
-          let diff = b.dueDay - todayDay
-          if (diff < -5) diff = (daysInMonth - todayDay) + b.dueDay
-          return { ...b, diff }
-        }).sort((a,b) => a.diff - b.diff)
+
+        const getBillDiff = (b) => {
+          if (b.dueDay && String(b.dueDay).includes('-')) {
+            // Full date (yearly bill)
+            const due = new Date(b.dueDay)
+            due.setHours(0, 0, 0, 0)
+            return Math.round((due - todayD) / 86400000)
+          }
+          // Day-of-month (monthly bill)
+          let diff = (parseInt(b.dueDay) || 1) - todayDay
+          if (diff < -5) diff = (daysInMonth - todayDay) + (parseInt(b.dueDay) || 1)
+          return diff
+        }
+
+        const urgentBills = bills
+          .map(b => ({ ...b, diff: getBillDiff(b) }))
+          .filter(b => b.diff <= 7)
+          .sort((a, b) => a.diff - b.diff)
+
         if (!urgentBills.length) return null
         return urgentBills.map(b => {
           const isOverdue = b.diff < 0
           const urgentColor = isOverdue ? 'var(--danger)' : 'var(--warn)'
           const urgentBg    = isOverdue ? 'var(--danger-bg)' : 'var(--warn-bg)'
           const urgentFg    = isOverdue ? 'var(--danger-fg)' : 'var(--warn-fg)'
-          const dueLabel = isOverdue ? `${Math.abs(b.diff)}d overdue` : b.diff === 0 ? 'Due today' : `Due in ${b.diff}d`
+          const dueLabel = isOverdue
+            ? `${Math.abs(b.diff)}d overdue`
+            : b.diff === 0 ? 'Due today'
+            : `Due in ${b.diff} day${b.diff === 1 ? '' : 's'}`
+          const dueSub = isOverdue
+            ? '⚠ Overdue'
+            : b.diff === 0 ? '⏰ Due today'
+            : `⏰ Due in ${b.diff} day${b.diff === 1 ? '' : 's'}`
           const isSettling = settlingBill?.id === b.id
           return (
             <div key={b.id} style={{ background:urgentBg, border:`1.5px solid ${urgentColor}`, borderRadius:'var(--r-lg)', padding:'11px 14px', marginBottom:8 }}>
@@ -242,7 +260,7 @@ export default function Dashboard() {
                 <div style={{ flex:1, minWidth:0 }}>
                   <p style={{ fontSize:13, fontWeight:700, color:urgentFg }}>{b.name}</p>
                   <p style={{ fontSize:11, color:urgentColor, marginTop:1 }}>
-                    {isOverdue ? '⚠ Overdue' : b.diff === 0 ? '⏰ Due today' : '⏰ Due soon'} · Day {b.dueDay} of month
+                    {dueSub}
                   </p>
                 </div>
                 <div style={{ textAlign:'right', flexShrink:0 }}>
