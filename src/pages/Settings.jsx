@@ -469,16 +469,7 @@ export default function Settings() {
             </F>
 
             <F label="Icon">
-              <div style={{ display:'flex', flexWrap:'wrap', gap:8 }}>
-                {EMOJI_POOL.map(em => (
-                  <button key={em} onClick={() => setCatForm(f=>({...f,icon:em}))} style={{
-                    width:38, height:38, borderRadius:10, fontSize:18,
-                    background: catForm.icon===em ? 'var(--accent-bg)' : 'var(--surface2)',
-                    border:`1.5px solid ${catForm.icon===em ? 'var(--accent)' : 'var(--border)'}`,
-                    display:'flex', alignItems:'center', justifyContent:'center', transition:'all 0.12s',
-                  }}>{em}</button>
-                ))}
-              </div>
+              <EmojiPicker value={catForm.icon} onChange={em => setCatForm(f=>({...f,icon:em}))} />
             </F>
 
             <F label="Color">
@@ -530,11 +521,7 @@ export default function Settings() {
               <input value={billCatForm.name} onChange={e=>setBillCatForm(f=>({...f,name:e.target.value}))} placeholder="e.g. Maintenance" style={inp} />
             </F>
             <F label="Icon">
-              <div style={{ display:'flex', flexWrap:'wrap', gap:8 }}>
-                {EMOJI_POOL.map(em => (
-                  <button key={em} onClick={() => setBillCatForm(f=>({...f,icon:em}))} style={{ width:38, height:38, borderRadius:10, fontSize:18, background: billCatForm.icon===em ? 'var(--accent-bg)' : 'var(--surface2)', border:`1.5px solid ${billCatForm.icon===em ? 'var(--accent)' : 'var(--border)'}`, display:'flex', alignItems:'center', justifyContent:'center', transition:'all 0.12s' }}>{em}</button>
-                ))}
-              </div>
+              <EmojiPicker value={billCatForm.icon} onChange={em => setBillCatForm(f=>({...f,icon:em}))} />
             </F>
             <F label="Color">
               <div style={{ display:'flex', flexWrap:'wrap', gap:8 }}>
@@ -575,11 +562,7 @@ export default function Settings() {
               <input value={loanCatForm.name} onChange={e=>setLoanCatForm(f=>({...f,name:e.target.value}))} placeholder="e.g. Family Loan" style={inp} />
             </F>
             <F label="Icon">
-              <div style={{ display:'flex', flexWrap:'wrap', gap:8 }}>
-                {EMOJI_POOL.map(em => (
-                  <button key={em} onClick={() => setLoanCatForm(f=>({...f,icon:em}))} style={{ width:38, height:38, borderRadius:10, fontSize:18, background: loanCatForm.icon===em ? 'var(--accent-bg)' : 'var(--surface2)', border:`1.5px solid ${loanCatForm.icon===em ? 'var(--accent)' : 'var(--border)'}`, display:'flex', alignItems:'center', justifyContent:'center', transition:'all 0.12s' }}>{em}</button>
-                ))}
-              </div>
+              <EmojiPicker value={loanCatForm.icon} onChange={em => setLoanCatForm(f=>({...f,icon:em}))} />
             </F>
             <F label="Color">
               <div style={{ display:'flex', flexWrap:'wrap', gap:8 }}>
@@ -620,11 +603,7 @@ export default function Settings() {
               <input value={recurringCatForm.name} onChange={e=>setRecurringCatForm(f=>({...f,name:e.target.value}))} placeholder="e.g. Membership" style={inp} />
             </F>
             <F label="Icon">
-              <div style={{ display:'flex', flexWrap:'wrap', gap:8 }}>
-                {EMOJI_POOL.map(em => (
-                  <button key={em} onClick={() => setRecurringCatForm(f=>({...f,icon:em}))} style={{ width:38, height:38, borderRadius:10, fontSize:18, background: recurringCatForm.icon===em ? 'var(--accent-bg)' : 'var(--surface2)', border:`1.5px solid ${recurringCatForm.icon===em ? 'var(--accent)' : 'var(--border)'}`, display:'flex', alignItems:'center', justifyContent:'center', transition:'all 0.12s' }}>{em}</button>
-                ))}
-              </div>
+              <EmojiPicker value={recurringCatForm.icon} onChange={em => setRecurringCatForm(f=>({...f,icon:em}))} />
             </F>
             <F label="Color">
               <div style={{ display:'flex', flexWrap:'wrap', gap:8 }}>
@@ -736,6 +715,52 @@ const EmptyCard = ({ text }) => (
     <p style={{ color:'var(--text3)', fontSize:14 }}>{text}</p>
   </div>
 )
+
+const EmojiPicker = ({ value, onChange }) => {
+  const handleCustom = (e) => {
+    // Extract the first grapheme cluster (emoji or char) from the input
+    const raw = e.target.value
+    // Use Intl.Segmenter if available, otherwise take last typed char
+    if (typeof Intl !== 'undefined' && Intl.Segmenter) {
+      const seg = new Intl.Segmenter()
+      const segs = [...seg.segment(raw)]
+      if (segs.length > 0) onChange(segs[segs.length - 1].segment)
+    } else {
+      // fallback: grab last 2 code-units (covers most emoji)
+      const chars = [...raw]
+      if (chars.length > 0) onChange(chars[chars.length - 1])
+    }
+  }
+  return (
+    <div>
+      {/* Custom emoji input */}
+      <div style={{ display:'flex', alignItems:'center', gap:10, marginBottom:10, padding:'10px 12px', background:'var(--surface2)', border:'1.5px solid var(--border)', borderRadius:'var(--r)' }}>
+        <span style={{ fontSize:28, lineHeight:1, minWidth:34, textAlign:'center' }}>{value}</span>
+        <div style={{ flex:1 }}>
+          <p style={{ fontSize:11, fontWeight:700, color:'var(--text2)', marginBottom:4, textTransform:'uppercase', letterSpacing:'0.06em' }}>Type any emoji</p>
+          <input
+            type="text"
+            placeholder="Open emoji keyboard & pick one…"
+            onChange={handleCustom}
+            style={{ ...inp, padding:'6px 10px', fontSize:13, width:'100%' }}
+          />
+        </div>
+      </div>
+      {/* Quick-pick pool */}
+      <p style={{ fontSize:11, fontWeight:600, color:'var(--text3)', marginBottom:6 }}>Or pick from common:</p>
+      <div style={{ display:'flex', flexWrap:'wrap', gap:8 }}>
+        {EMOJI_POOL.map(em => (
+          <button key={em} onClick={() => onChange(em)} style={{
+            width:38, height:38, borderRadius:10, fontSize:18,
+            background: value===em ? 'var(--accent-bg)' : 'var(--surface2)',
+            border:`1.5px solid ${value===em ? 'var(--accent)' : 'var(--border)'}`,
+            display:'flex', alignItems:'center', justifyContent:'center', transition:'all 0.12s',
+          }}>{em}</button>
+        ))}
+      </div>
+    </div>
+  )
+}
 
 const inp = { width:'100%', padding:'12px 14px', background:'var(--surface2)', border:'1.5px solid var(--border)', borderRadius:'var(--r)', fontSize:15, color:'var(--text)', outline:'none', transition:'border-color 0.15s' }
 const F = ({label,children}) => (
