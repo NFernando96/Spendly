@@ -9,11 +9,27 @@ const blank = { name: '', icon: '📋', color: '#6b7280', amount: '', dueDay: ''
 
 function getDueStatus(dueDay) {
   const today = new Date()
+  today.setHours(0, 0, 0, 0)
+  // Full date string (YYYY-MM-DD)
+  if (typeof dueDay === 'string' && dueDay.includes('-')) {
+    const due = new Date(dueDay)
+    due.setHours(0, 0, 0, 0)
+    return Math.round((due - today) / 86400000)
+  }
+  // Legacy: day-of-month integer
   const todayDay = today.getDate()
   const daysInMonth = new Date(today.getFullYear(), today.getMonth() + 1, 0).getDate()
   let diff = dueDay - todayDay
   if (diff < -5) diff = (daysInMonth - todayDay) + dueDay
   return diff
+}
+
+function formatDueLabel(dueDay) {
+  if (typeof dueDay === 'string' && dueDay.includes('-')) {
+    const d = new Date(dueDay)
+    return d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })
+  }
+  return dueDay ? getOrdinal(dueDay) + ' of each month' : 'Day ?'
 }
 
 function getOrdinal(n) {
@@ -22,9 +38,13 @@ function getOrdinal(n) {
   return n + (s[(v - 20) % 10] || s[v] || s[0])
 }
 
-// ── Shared DayPicker Component ──
-function DayPicker({ value, onChange, placeholder = 'Select due day' }) {
+// ── Smart Due Date Picker ──
+// For monthly cycle: picks a day-of-month (1–31), stored as integer
+// For yearly cycle: picks a full calendar date, stored as YYYY-MM-DD
+function DueDatePicker({ value, onChange, cycle, placeholder = 'Select due date' }) {
   const [open, setOpen] = useState(false)
+  const [viewYear, setViewYear]   = useState(() => { const d = value && String(value).includes('-') ? new Date(value) : new Date(); return d.getFullYear() })
+  const [viewMonth, setViewMonth] = useState(() => { const d = value && String(value).includes('-') ? new Date(value) : new Date(); return d.getMonth() })
   const ref = useRef(null)
 
   useEffect(() => {
@@ -33,26 +53,65 @@ function DayPicker({ value, onChange, placeholder = 'Select due day' }) {
     return () => document.removeEventListener('mousedown', handler)
   }, [])
 
-  const days = Array.from({ length: 31 }, (_, i) => i + 1)
-  const selected = parseInt(value) || null
+  const handleOpen = () => {
+    if (value && String(value).includes('-')) {
+      const d = new Date(value)
+      setViewYear(d.getFullYear()); setViewMonth(d.getMonth())
+    } else {
+      const d = new Date()
+      setViewYear(d.getFullYear()); setViewMonth(d.getMonth())
+    }
+    setOpen(o => !o)
+  }
+
+  const MONTHS = ['January','February','March','April','May','June','July','August','September','October','November','December']
+  const DAYS   = ['Su','Mo','Tu','We','Th','Fr','Sa']
+
+  const firstDay  = new Date(viewYear, viewMonth, 1).getDay()
+  const daysInMon = new Date(viewYear, viewMonth + 1, 0).getDate()
+  const todayStr  = new Date().toISOString().split('T')[0]
+
+  // For monthly: selected day-of-month integer
+  const selectedDayInt = cycle === 'monthly' ? (parseInt(value) || null) : null
+  // For yearly: selected full date string
+  const selectedDateStr = cycle === 'yearly' && value && String(value).includes('-') ? String(value) : null
+
+  const prevMonth = () => { if (viewMonth === 0) { setViewMonth(11); setViewYear(y => y-1) } else setViewMonth(m => m-1) }
+  const nextMonth = () => { if (viewMonth === 11) { setViewMonth(0); setViewYear(y => y+1) } else setViewMonth(m => m+1) }
+
+  const pickDay = (d) => {
+    if (cycle === 'monthly') {
+      onChange(d) // store as integer
+    } else {
+      const mm = String(viewMonth + 1).padStart(2, '0')
+      const dd = String(d).padStart(2, '0')
+      onChange(`${viewYear}-${mm}-${dd}`)
+    }
+    setOpen(false)
+  }
+
+  // Display label
+  let displayLabel = placeholder
+  if (cycle === 'monthly' && selectedDayInt) {
+    displayLabel = `${getOrdinal(selectedDayInt)} of every month`
+  } else if (cycle === 'yearly' && selectedDateStr) {
+    displayLabel = new Date(selectedDateStr).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })
+  }
+
+  const hasValue = cycle === 'monthly' ? !!selectedDayInt : !!selectedDateStr
 
   return (
     <div ref={ref} style={{ position: 'relative' }}>
-      <button
-        type="button"
-        onClick={() => setOpen(o => !o)}
-        style={{
-          width: '100%', padding: '12px 14px', background: 'var(--surface2)',
-          border: `1.5px solid ${open ? 'var(--accent)' : 'var(--border)'}`,
-          borderRadius: 'var(--r)', fontSize: 15, color: selected ? 'var(--text)' : 'var(--text3)',
-          outline: 'none', transition: 'border-color 0.15s', cursor: 'pointer',
-          display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8,
-          textAlign: 'left',
-        }}
-      >
+      <button type="button" onClick={handleOpen} style={{
+        width: '100%', padding: '12px 14px', background: 'var(--surface2)',
+        border: `1.5px solid ${open ? 'var(--accent)' : 'var(--border)'}`,
+        borderRadius: 'var(--r)', fontSize: 15, color: hasValue ? 'var(--text)' : 'var(--text3)',
+        outline: 'none', transition: 'border-color 0.15s', cursor: 'pointer',
+        display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, textAlign: 'left',
+      }}>
         <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <Calendar size={14} color={selected ? 'var(--accent)' : 'var(--text3)'} />
-          {selected ? `${getOrdinal(selected)} of each month` : placeholder}
+          <Calendar size={14} color={hasValue ? 'var(--accent)' : 'var(--text3)'} />
+          {displayLabel}
         </span>
         <ChevronDown size={14} color="var(--text3)" style={{ transform: open ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s', flexShrink: 0 }} />
       </button>
@@ -62,35 +121,58 @@ function DayPicker({ value, onChange, placeholder = 'Select due day' }) {
           position: 'absolute', top: 'calc(100% + 6px)', left: 0, right: 0, zIndex: 9999,
           background: 'var(--surface)', border: '1.5px solid var(--border)',
           borderRadius: 'var(--r-lg)', boxShadow: '0 8px 32px rgba(0,0,0,0.22)',
-          padding: '14px',
+          padding: '14px', minWidth: 280,
         }}>
-          <p style={{ fontSize: 10, fontWeight: 700, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: 10, textAlign: 'center' }}>
-            Pick bill due day
+          {/* Helper text */}
+          <p style={{ fontSize: 11, fontWeight: 600, color: 'var(--text3)', textAlign: 'center', marginBottom: 10, textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+            {cycle === 'monthly' ? 'Pick day of month (repeats monthly)' : 'Pick exact due date'}
           </p>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 4 }}>
-            {days.map(d => (
-              <button
-                key={d}
-                type="button"
-                onClick={() => { onChange(String(d)); setOpen(false) }}
-                style={{
-                  padding: '8px 0', borderRadius: 8, fontSize: 13, fontWeight: 600,
-                  background: selected === d ? 'var(--accent)' : 'var(--surface2)',
-                  border: `1.5px solid ${selected === d ? 'var(--accent)' : 'var(--border)'}`,
-                  color: selected === d ? '#fff' : 'var(--text)', cursor: 'pointer',
-                  transition: 'all 0.12s', textAlign: 'center',
-                }}
-                onMouseEnter={e => { if (selected !== d) { e.currentTarget.style.background = 'var(--accent-bg)'; e.currentTarget.style.borderColor = 'var(--accent)'; e.currentTarget.style.color = 'var(--accent)' } }}
-                onMouseLeave={e => { if (selected !== d) { e.currentTarget.style.background = 'var(--surface2)'; e.currentTarget.style.borderColor = 'var(--border)'; e.currentTarget.style.color = 'var(--text)' } }}
-              >
-                {d}
-              </button>
+
+          {/* Month/Year nav — always show for yearly; for monthly just for browsing context */}
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
+            <button type="button" onClick={prevMonth} style={{ width:30, height:30, borderRadius:8, background:'var(--surface2)', border:'1.5px solid var(--border)', cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center', fontSize:16, color:'var(--text)' }}>‹</button>
+            <span style={{ fontSize: 14, fontWeight: 700, color: 'var(--text)' }}>{MONTHS[viewMonth]} {viewYear}</span>
+            <button type="button" onClick={nextMonth} style={{ width:30, height:30, borderRadius:8, background:'var(--surface2)', border:'1.5px solid var(--border)', cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center', fontSize:16, color:'var(--text)' }}>›</button>
+          </div>
+
+          {/* Day-of-week headers */}
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 2, marginBottom: 4 }}>
+            {DAYS.map(d => (
+              <div key={d} style={{ textAlign: 'center', fontSize: 10, fontWeight: 700, color: 'var(--text3)', padding: '4px 0', textTransform: 'uppercase' }}>{d}</div>
             ))}
           </div>
-          {selected && (
-            <button
-              type="button"
-              onClick={() => { onChange(''); setOpen(false) }}
+
+          {/* Calendar grid */}
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 2 }}>
+            {Array.from({ length: firstDay }).map((_, i) => <div key={'e'+i} />)}
+            {Array.from({ length: daysInMon }, (_, i) => i + 1).map(d => {
+              const mm = String(viewMonth + 1).padStart(2, '0')
+              const dd = String(d).padStart(2, '0')
+              const dateStr = `${viewYear}-${mm}-${dd}`
+
+              const isSelected = cycle === 'monthly'
+                ? selectedDayInt === d
+                : selectedDateStr === dateStr
+              const isToday = todayStr === dateStr && cycle === 'yearly'
+
+              return (
+                <button key={d} type="button" onClick={() => pickDay(d)} style={{
+                  padding: '7px 0', borderRadius: 8, fontSize: 13,
+                  fontWeight: isSelected || isToday ? 700 : 500,
+                  background: isSelected ? 'var(--accent)' : isToday ? 'var(--accent-bg)' : 'transparent',
+                  border: `1.5px solid ${isSelected ? 'var(--accent)' : isToday ? 'var(--accent)' : 'transparent'}`,
+                  color: isSelected ? '#fff' : isToday ? 'var(--accent)' : 'var(--text)',
+                  cursor: 'pointer', transition: 'all 0.1s', textAlign: 'center',
+                }}
+                onMouseEnter={e => { if (!isSelected) e.currentTarget.style.background = 'var(--surface2)' }}
+                onMouseLeave={e => { if (!isSelected) e.currentTarget.style.background = isToday ? 'var(--accent-bg)' : 'transparent' }}
+                >{d}</button>
+              )
+            })}
+          </div>
+
+          {hasValue && (
+            <button type="button" onClick={() => { onChange(''); setOpen(false) }}
               style={{ width: '100%', marginTop: 10, padding: '7px', borderRadius: 'var(--r)', fontSize: 12, fontWeight: 600, color: 'var(--danger)', background: 'var(--danger-bg)', border: 'none', cursor: 'pointer' }}
             >
               Clear
@@ -101,6 +183,10 @@ function DayPicker({ value, onChange, placeholder = 'Select due day' }) {
     </div>
   )
 }
+
+
+
+
 
 export default function Bills() {
   const { bills } = useApp()
@@ -153,7 +239,7 @@ export default function Bills() {
         icon: form.icon,
         color: form.color,
         amount: parseFloat(form.amount) || 0,
-        dueDay: parseInt(form.dueDay) || 1,
+        dueDay: form.dueDay.includes("-") ? form.dueDay : (parseInt(form.dueDay) || 1),
         cycle: form.cycle,
         notes: form.notes.trim(),
       }
@@ -273,14 +359,14 @@ export default function Bills() {
               <input type="number" inputMode="decimal" value={form.amount} onChange={e=>setForm(f=>({...f,amount:e.target.value}))} placeholder="0" style={inp}/>
             </F>
 
-            <F label="Due Day">
-              <DayPicker value={form.dueDay} onChange={v => setForm(f=>({...f, dueDay:v}))} placeholder="Select bill due day" />
+            <F label="Due Date">
+              <DueDatePicker value={form.dueDay} onChange={v => setForm(f=>({...f, dueDay:v}))} cycle={form.cycle} placeholder="Select due date" />
             </F>
 
             <F label="Cycle">
               <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:8 }}>
                 {['monthly','yearly'].map(c => (
-                  <button key={c} onClick={()=>setForm(f=>({...f,cycle:c}))}
+                  <button key={c} onClick={()=>setForm(f=>({...f,cycle:c,dueDay:''}))}
                     style={{ padding:'11px', borderRadius:'var(--r)', fontSize:13, fontWeight:600, background:form.cycle===c?'var(--accent-bg)':'var(--surface2)', border:`1.5px solid ${form.cycle===c?'var(--accent)':'var(--border)'}`, color:form.cycle===c?'var(--accent-fg)':'var(--text2)', transition:'all 0.15s', cursor:'pointer' }}
                   >{c.charAt(0).toUpperCase()+c.slice(1)}</button>
                 ))}
@@ -346,7 +432,7 @@ function BillCard({ bill, onEdit, onDelete, mask, getDueStatus }) {
         <p style={{ fontSize:14, fontWeight:700, color:'var(--text)', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{bill.name}</p>
         <div style={{ display:'flex', alignItems:'center', gap:8, marginTop:3, flexWrap:'wrap' }}>
           <span style={{ fontSize:11, color:'var(--text3)', fontWeight:500 }}>
-            Every {bill.cycle} · {bill.dueDay ? getOrdinal(bill.dueDay) : 'Day ?'}
+            Every {bill.cycle} · {formatDueLabel(bill.dueDay)}
           </span>
           {bill.notes && <span style={{ fontSize:11, color:'var(--text3)' }}>· {bill.notes}</span>}
         </div>
