@@ -320,7 +320,7 @@ export default function Dashboard() {
           let diff = l.dueDay - todayDay
           if (diff < -5) diff = (daysInMonth - todayDay) + l.dueDay
           return { ...l, diff }
-        }).filter(l => l.diff <= 5).sort((a,b) => a.diff - b.diff)
+        }).filter(l => l.diff <= 7).sort((a,b) => a.diff - b.diff)
         if (!urgentLoans.length) return null
         return urgentLoans.map(l => {
           const isOverdue = l.diff < 0
